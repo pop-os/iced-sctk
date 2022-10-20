@@ -14,7 +14,7 @@ use sctk::{
     },
 };
 
-use crate::dpi::{LogicalSize, PhysicalSize};
+use crate::{dpi::{LogicalSize, PhysicalSize}, event_loop::state::{SctkWindow, SctkPopup, SctkLayerSurface}};
 
 #[derive(Debug, Clone)]
 pub enum IcedSctkEvent<T> {
@@ -161,6 +161,7 @@ pub enum KeyboardEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum WindowEventVariant {
+    Created(SctkWindow),
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:close>
     Close,
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
@@ -173,6 +174,7 @@ pub enum WindowEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum PopupEventVariant {
+    Created(SctkPopup),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:popup_done>
     Done,
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
@@ -185,6 +187,7 @@ pub enum PopupEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum LayerSurfaceEventVariant {
+    Created(SctkLayerSurface),
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:closed>
     Done,
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:configure>

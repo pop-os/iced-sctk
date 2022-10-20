@@ -41,13 +41,14 @@ use sctk::{
     },
     seat::keyboard::Modifiers,
 };
-use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32, process::id};
+use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32, process::id, hash::Hash};
 use wayland_backend::client::ObjectId;
 
 use glutin::{api::egl, config::ConfigSurfaceTypes, prelude::*, surface::WindowSurface};
 use iced_graphics::{compositor, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use std::mem::ManuallyDrop;
+use iced_native::window::Id as SurfaceId;
 
 pub struct IcedSctkState;
 
@@ -175,7 +176,7 @@ where
 {
     let mut debug = Debug::new();
     debug.startup_started();
-    let (mut sender, receiver) = mpsc::unbounded::<A::Message>();
+    let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
     let event_loop = SctkEventLoop::<A::Message>::new().expect("Failed to initialize the event loop");
     
@@ -192,13 +193,15 @@ where
         runtime.enter(|| A::new(flags))
     };
 
+    let windows: HashMap<SurfaceId, SctkWindow> = HashMap::new();
+
     Ok(())}
 
 async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
     mut renderer: A::Renderer,
-    mut runtime: Runtime<E, calloop::channel::Sender<(iced_native::window::Id, A::Message)>, A::Message>,
+    mut runtime: Runtime<E, calloop::channel::Sender<(SurfaceId, A::Message)>, A::Message>,
     mut proxy: calloop::channel::Sender<A::Message>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
@@ -223,7 +226,7 @@ pub fn build_user_interface<'a, A: Application>(
     renderer: &mut A::Renderer,
     size: Size,
     debug: &mut Debug,
-    id: iced_native::window::Id,
+    id: SurfaceId,
 ) -> UserInterface<'a, A::Message, A::Renderer>
 where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
@@ -246,7 +249,7 @@ pub struct State<A: Application>
 where
     <A::Renderer as crate::Renderer>::Theme: application::StyleSheet,
 {
-    pub(crate) id: iced_native::window::Id,
+    pub(crate) id: SurfaceId,
     title: String,
     scale_factor: f64,
     viewport: Viewport,
@@ -263,7 +266,7 @@ where
     <A::Renderer as crate::Renderer>::Theme: application::StyleSheet,
 {
     /// Creates a new [`State`] for the provided [`Application`]
-    pub fn new(application: &A, id: iced_native::window::Id) -> Self {
+    pub fn new(application: &A, id: SurfaceId) -> Self {
         let title = application.title();
         let scale_factor = application.scale_factor();
         let theme = application.theme();
@@ -432,7 +435,7 @@ pub(crate) fn update<A: Application, E: Executor>(
     state: &State<A>,
     renderer: &mut A::Renderer,
     runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<(iced_native::window::Id, A::Message)>,
+    proxy: &mut calloop::channel::Sender<(SurfaceId, A::Message)>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
     windows: &mut HashMap<ObjectId, SctkWindow>,
@@ -477,11 +480,11 @@ fn run_command<A, E>(
     renderer: &mut A::Renderer,
     command: Command<A::Message>,
     runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<(iced_native::window::Id, A::Message)>,
+    proxy: &mut calloop::channel::Sender<(SurfaceId, A::Message)>,
     debug: &mut Debug,
-    windows: &mut HashMap<iced_native::window::Id, SctkWindow>,
-    layer_surfaces: &mut HashMap<iced_native::window::Id, SctkLayerSurface>,
-    popups: &mut HashMap<iced_native::window::Id, SctkPopup>,
+    windows: &mut HashMap<SurfaceId, SctkWindow>,
+    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
+    popups: &mut HashMap<SurfaceId, SctkPopup>,
     _graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     A: Application,
@@ -571,9 +574,9 @@ pub fn build_user_interfaces<'a, A>(
     application: &'a A,
     renderer: &mut A::Renderer,
     debug: &mut Debug,
-    states: &HashMap<iced_native::window::Id, State<A>>,
-    mut pure_states: HashMap<iced_native::window::Id, user_interface::Cache>,
-) -> HashMap<iced_native::window::Id, UserInterface<'a, <A as Application>::Message, <A as Application>::Renderer>>
+    states: &HashMap<SurfaceId, State<A>>,
+    mut pure_states: HashMap<SurfaceId, user_interface::Cache>,
+) -> HashMap<SurfaceId, UserInterface<'a, <A as Application>::Message, <A as Application>::Renderer>>
 where
     A: Application + 'static,
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,

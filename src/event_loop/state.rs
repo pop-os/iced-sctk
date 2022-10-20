@@ -54,7 +54,7 @@ use sctk::{
     },
     shm::{multi::MultiPool, ShmState},
 };
-
+use once_cell::sync::OnceCell;
 #[derive(Debug, Clone)]
 pub(crate) struct SctkSeat {
     pub(crate) seat: WlSeat,
@@ -69,19 +69,19 @@ pub(crate) struct SctkSeat {
     pub(crate) modifiers: Modifiers,
 }
 
-#[derive(Debug)]
-pub(crate) struct SctkWindow {
-    pub(crate) xdg_surface: XdgShellSurface,
+#[derive(Debug, Clone)]
+pub struct SctkWindow {
     pub(crate) window: Window,
     pub(crate) requested_size: Option<LogicalSize<u32>>,
     pub(crate) current_size: Option<LogicalSize<u32>>,
     pub(crate) last_configure: Option<WindowConfigure>,
     /// Requests that SCTK window should perform.
     pub(crate) pending_requests: Arc<Mutex<Vec<WindowRequest>>>,
+    xdg_surface: Arc<XdgShellSurface>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SctkLayerSurface {
+pub struct SctkLayerSurface {
     pub(crate) surface: LayerSurface,
     pub(crate) requested_size: Option<LogicalSize<u32>>,
     pub(crate) current_size: Option<LogicalSize<u32>>,
@@ -100,16 +100,16 @@ pub enum SctkSurface {
     Popup(Popup),
 }
 
-#[derive(Debug)]
-pub(crate) struct SctkPopup {
-    pub(crate) xdg_surface: XdgShellSurface,
+#[derive(Debug, Clone)]
+pub struct SctkPopup {
     pub(crate) popup: Popup,
     pub(crate) parent: SctkSurface,
     pub(crate) toplevel: WlSurface,
-    pub(crate) positioner: XdgPositioner,
     pub(crate) requested_size: Option<LogicalSize<u32>>,
     pub(crate) current_size: Option<LogicalSize<u32>>,
     pub(crate) last_configure: Option<PopupConfigure>,
+    // pub(crate) positioner: XdgPositioner,
+    xdg_surface: Arc<XdgShellSurface>,
 }
 
 /// Wrapper to carry sctk state.
