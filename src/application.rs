@@ -1,11 +1,11 @@
 use crate::{
     conversion,
     dpi::PhysicalPosition,
-    error,
+    error::{self, Error},
     event_loop::{
         self,
         control_flow::ControlFlow,
-        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
+        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow}, SctkEventLoop,
     },
     renderer,
     sctk_event::{
@@ -173,14 +173,32 @@ where
     C: window::GLCompositor<Renderer = A::Renderer> + 'static,
     <A::Renderer as iced_native::Renderer>::Theme: StyleSheet,
 {
-    todo!()
-}
+    let mut debug = Debug::new();
+    debug.startup_started();
+    let (mut sender, receiver) = mpsc::unbounded::<A::Message>();
+
+    let event_loop = SctkEventLoop::<A::Message>::new().expect("Failed to initialize the event loop");
+    
+    let runtime = {
+        let proxy = event_loop.proxy();
+        let executor = E::new().map_err(Error::ExecutorCreationFailed)?;
+
+        Runtime::new(executor, proxy)
+    };
+
+    let (application, init_command) = {
+        let flags = settings.flags;
+
+        runtime.enter(|| A::new(flags))
+    };
+
+    Ok(())}
 
 async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
     mut renderer: A::Renderer,
-    mut runtime: Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
+    mut runtime: Runtime<E, calloop::channel::Sender<(iced_native::window::Id, A::Message)>, A::Message>,
     mut proxy: calloop::channel::Sender<A::Message>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
@@ -188,7 +206,7 @@ async fn run_instance<A, E, C>(
     mut layer_surfaces: HashMap<ObjectId, SctkLayerSurface>,
     mut popups: HashMap<ObjectId, SctkPopup>,
     exit_on_close_request: bool,
-) where
+) -> Result<(), Error> where
     A: Application + 'static,
     E: Executor + 'static,
     C: window::GLCompositor<Renderer = A::Renderer> + 'static,

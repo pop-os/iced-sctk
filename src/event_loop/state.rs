@@ -186,11 +186,6 @@ pub struct SctkState<T> {
     /// pending user events
     pub pending_user_events: Vec<(iced_native::window::Id, T)>,
 
-    // sender for sending events to be processed by Iced
-    /// A sink for window and device events that is being filled during dispatching
-    /// event loop and forwarded downstream afterwards.
-    pub(crate) tx: mpsc::UnboundedSender<IcedSctkEvent<T>>,
-
     // handles
     pub(crate) queue_handle: QueueHandle<Self>,
     pub(crate) loop_handle: LoopHandle<'static, Self>,

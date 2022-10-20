@@ -1,5 +1,6 @@
 pub mod control_flow;
 pub mod state;
+pub mod proxy;
 
 use std::{
     cell::RefCell,
@@ -58,7 +59,7 @@ use wayland_backend::client::WaylandError;
 
 use self::{
     control_flow::ControlFlow,
-    state::{SctkState, SctkWindow},
+    state::{SctkState, SctkWindow}, proxy::Proxy,
 };
 
 // impl SctkSurface {
@@ -97,7 +98,7 @@ impl<T: Debug> SctkEventLoop<T>
 where
     T: 'static + Debug,
 {
-    pub(crate) fn new(tx: mpsc::UnboundedSender<IcedSctkEvent<T>>) -> Result<Self, ConnectError> {
+    pub(crate) fn new() -> Result<Self, ConnectError> {
         let connection = Connection::connect_to_env()?;
         let display = connection.display();
         let (globals, mut event_queue) = registry_queue_init(&connection).unwrap();
@@ -162,7 +163,6 @@ where
                 layer_surfaces: HashMap::new(),
                 popups: HashMap::new(),
                 kbd_focus: None,
-                tx,
                 window_user_requests: HashMap::new(),
                 window_compositor_updates: HashMap::new(),
                 sctk_events: Vec::new(),
@@ -180,6 +180,10 @@ where
             event_loop_awakener: ping,
             user_events_sender,
         })
+    }
+
+    pub fn proxy(&self) -> Proxy<T> {
+        Proxy::new(self.user_events_sender.clone())
     }
 
     pub fn run_return<F>(&mut self, mut callback: F) -> i32

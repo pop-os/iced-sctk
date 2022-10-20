@@ -20,3 +20,9 @@ pub enum Error {
     #[error("The application connection to the wayland server could not be created.")]
     ConnectionCreationFailed(ConnectError),
 }
+
+impl From<iced_graphics::Error> for Error {
+    fn from(error: iced_graphics::Error) -> Error {
+        Error::GraphicsCreationFailed(error)
+    }
+}
