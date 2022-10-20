@@ -41,7 +41,7 @@ use sctk::{
     },
     seat::keyboard::Modifiers,
 };
-use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
+use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32, process::id};
 use wayland_backend::client::ObjectId;
 
 use glutin::{api::egl, config::ConfigSurfaceTypes, prelude::*, surface::WindowSurface};
@@ -205,7 +205,7 @@ pub fn build_user_interface<'a, A: Application>(
     renderer: &mut A::Renderer,
     size: Size,
     debug: &mut Debug,
-    id: ObjectId,
+    id: iced_native::window::Id,
 ) -> UserInterface<'a, A::Message, A::Renderer>
 where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
@@ -228,6 +228,7 @@ pub struct State<A: Application>
 where
     <A::Renderer as crate::Renderer>::Theme: application::StyleSheet,
 {
+    pub(crate) id: iced_native::window::Id,
     title: String,
     scale_factor: f64,
     viewport: Viewport,
@@ -244,7 +245,7 @@ where
     <A::Renderer as crate::Renderer>::Theme: application::StyleSheet,
 {
     /// Creates a new [`State`] for the provided [`Application`]
-    pub fn new(application: &A) -> Self {
+    pub fn new(application: &A, id: iced_native::window::Id) -> Self {
         let title = application.title();
         let scale_factor = application.scale_factor();
         let theme = application.theme();
@@ -253,6 +254,7 @@ where
         let viewport = Viewport::with_physical_size(Size::new(1, 1), 1.0);
 
         Self {
+            id,
             title,
             scale_factor,
             viewport,
@@ -412,7 +414,7 @@ pub(crate) fn update<A: Application, E: Executor>(
     state: &State<A>,
     renderer: &mut A::Renderer,
     runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<A::Message>,
+    proxy: &mut calloop::channel::Sender<(iced_native::window::Id, A::Message)>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
     windows: &mut HashMap<ObjectId, SctkWindow>,
@@ -457,11 +459,11 @@ fn run_command<A, E>(
     renderer: &mut A::Renderer,
     command: Command<A::Message>,
     runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<A::Message>,
+    proxy: &mut calloop::channel::Sender<(iced_native::window::Id, A::Message)>,
     debug: &mut Debug,
-    windows: &mut HashMap<ObjectId, SctkWindow>,
-    layer_surfaces: &mut HashMap<ObjectId, SctkLayerSurface>,
-    popups: &mut HashMap<ObjectId, SctkPopup>,
+    windows: &mut HashMap<iced_native::window::Id, SctkWindow>,
+    layer_surfaces: &mut HashMap<iced_native::window::Id, SctkLayerSurface>,
+    popups: &mut HashMap<iced_native::window::Id, SctkPopup>,
     _graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     A: Application,
@@ -471,6 +473,8 @@ fn run_command<A, E>(
     use iced_native::command;
     use iced_native::system;
     use iced_native::window;
+
+    let id = &state.id;
 
     for action in command.actions() {
         match action {
@@ -508,8 +512,36 @@ fn run_command<A, E>(
                 }
             },
             command::Action::Widget(action) => {
-                todo!()
-            }
+                let mut current_cache = std::mem::take(cache);
+                let mut current_operation = Some(action.into_operation());
+
+                let mut user_interface = build_user_interface(
+                    application,
+                    current_cache,
+                    renderer,
+                    state.logical_size(),
+                    debug,
+                    id.clone(), // TODO(derezzedex): run the operation on every widget tree
+                );
+
+                while let Some(mut operation) = current_operation.take() {
+                    user_interface.operate(renderer, operation.as_mut());
+
+                    match operation.finish() {
+                        operation::Outcome::None => {}
+                        operation::Outcome::Some(message) => {
+                            proxy
+                                .send((id.clone(), message))
+                                .expect("Send message to event loop");
+                        }
+                        operation::Outcome::Chain(next) => {
+                            current_operation = Some(next);
+                        }
+                    }
+                }
+
+                current_cache = user_interface.into_cache();
+                *cache = current_cache;            }
             // ignore
             command::Action::PlatformSpecific(_) => {}
         }
@@ -521,9 +553,9 @@ pub fn build_user_interfaces<'a, A>(
     application: &'a A,
     renderer: &mut A::Renderer,
     debug: &mut Debug,
-    states: &HashMap<ObjectId, State<A>>,
-    mut pure_states: HashMap<ObjectId, user_interface::Cache>,
-) -> HashMap<ObjectId, UserInterface<'a, <A as Application>::Message, <A as Application>::Renderer>>
+    states: &HashMap<iced_native::window::Id, State<A>>,
+    mut pure_states: HashMap<iced_native::window::Id, user_interface::Cache>,
+) -> HashMap<iced_native::window::Id, UserInterface<'a, <A as Application>::Message, <A as Application>::Renderer>>
 where
     A: Application + 'static,
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,

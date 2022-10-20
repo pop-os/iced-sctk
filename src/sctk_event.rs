@@ -27,7 +27,7 @@ pub enum IcedSctkEvent<T> {
     NewEvents(StartCause),
 
     /// Any user event from iced
-    UserEvent(T),
+    UserEvent((iced_native::window::Id, T)),
     /// An event produced by sctk
     SctkEvent(SctkEvent),
 

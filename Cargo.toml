@@ -27,6 +27,7 @@ wayland-backend = {version = "=0.1.0-beta.10", features = ["client_system"]}
 version = "0.5"
 git = "https://github.com/wash2/iced"
 branch = "sctk"
+features = ["sctk"]
 # path = "../iced/native"
 
 [dependencies.iced_graphics]

@@ -89,7 +89,7 @@ pub struct SctkEventLoop<T> {
     /// A proxy to wake up event loop.
     pub event_loop_awakener: calloop::ping::Ping,
     /// A sender for submitting user events in the event loop
-    pub user_events_sender: calloop::channel::Sender<T>,
+    pub user_events_sender: calloop::channel::Sender<(iced_native::window::Id, T)>,
     pub(crate) state: SctkState<T>,
 }
 
@@ -113,7 +113,7 @@ where
             // on RedrawEventsCleared.
             // shim::handle_window_requests(state);
             todo!()
-        });
+        }).unwrap();
         let (user_events_sender, user_events_channel) = calloop::channel::channel();
 
         loop_handle.insert_source(user_events_channel, |event, _, state| match event {
@@ -121,7 +121,7 @@ where
                 state.pending_user_events.push(e);
             }
             calloop::channel::Event::Closed => {}
-        });
+        }).unwrap();
         let wayland_source = WaylandSource::new(event_queue).unwrap();
 
         let wayland_dispatcher =

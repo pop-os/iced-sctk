@@ -184,7 +184,7 @@ pub struct SctkState<T> {
     pub popup_user_requests: HashMap<ObjectId, SurfaceUserRequest>,
 
     /// pending user events
-    pub pending_user_events: Vec<T>,
+    pub pending_user_events: Vec<(iced_native::window::Id, T)>,
 
     // sender for sending events to be processed by Iced
     /// A sink for window and device events that is being filled during dispatching
