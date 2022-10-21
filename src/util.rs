@@ -1,5 +1,3 @@
-use crate::dpi::PhysicalSize;
-
 /// The behavior of cursor grabbing.
 ///
 /// Use this enum with [`Window::set_cursor_grab`] to grab the cursor.

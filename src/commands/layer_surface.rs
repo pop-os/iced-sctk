@@ -11,23 +11,16 @@ use iced_native::{
     window,
 };
 use sctk::{
-    reexports::client::{backend::ObjectId, protocol::wl_output},
-    shell::{
-        layer::{LayerSurface, LayerSurfaceBuilder},
-        xdg::window::Window,
-    },
+    reexports::client::backend::ObjectId,
 };
 pub use window::{Event, Mode};
 
 pub use sctk::shell::layer::{Anchor, KeyboardInteractivity, Layer};
 
-use crate::dpi::LogicalSize;
-
 // TODO implement as builder that outputs a batched commands
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_shell_v1:request:get_layer_surface>
 pub fn get_layer_surface<Message>(
     builder: IcedLayerSurface,
-    layer: Layer,
     o: impl FnOnce(ObjectId) -> Message + 'static,
 ) -> Command<Message> {
     Command::single(command::Action::PlatformSpecific(
@@ -41,7 +34,7 @@ pub fn get_layer_surface<Message>(
 }
 
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:destroy>
-pub fn destroy_layer_surface<Message>(id: ObjectId, width: u32, height: u32) -> Command<Message> {
+pub fn destroy_layer_surface<Message>(id: ObjectId) -> Command<Message> {
     todo!()
 }
 
@@ -50,29 +43,28 @@ pub fn set_size<Message>(id: ObjectId, width: u32, height: u32) -> Command<Messa
     todo!()
 }
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_anchor>
-pub fn set_anchor<Message>(id: ObjectId, width: u32, height: u32) -> Command<Message> {
+pub fn set_anchor<Message>(id: ObjectId, anchor: Anchor) -> Command<Message> {
     todo!()
 }
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_exclusive_zone>
-pub fn set_exclusive_zone<Message>(id: ObjectId, width: u32, height: u32) -> Command<Message> {
+pub fn set_exclusive_zone<Message>(id: ObjectId, zone: i32) -> Command<Message> {
     todo!()
 }
 
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_margin>
-pub fn set_margin<Message>(id: ObjectId, width: u32, height: u32) -> Command<Message> {
+pub fn set_margin<Message>(id: ObjectId, top: u32, right: u32, bottom: u32, left: u32) -> Command<Message> {
     todo!()
 }
 
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_keyboard_interactivity>
 pub fn set_keyboard_interactivity<Message>(
     id: ObjectId,
-    width: u32,
-    height: u32,
+    keyboard_interactivity: KeyboardInteractivity
 ) -> Command<Message> {
     todo!()
 }
 
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_layer>
-pub fn set_layer<Message>(id: ObjectId, width: u32, height: u32) -> Command<Message> {
+pub fn set_layer<Message>(id: ObjectId, layer: Layer) -> Command<Message> {
     todo!()
 }

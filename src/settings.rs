@@ -1,6 +1,5 @@
 use iced_native::command::platform_specific::wayland::layer_surface::IcedLayerSurface;
 use sctk::shell::{
-    layer::{Layer, LayerSurface, LayerSurfaceBuilder},
     xdg::window::WindowBuilder,
 };
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0-only
 use sctk::{
-    compositor::{CompositorHandler, CompositorState},
+    compositor::{CompositorHandler},
     delegate_compositor,
     reexports::client::{protocol::wl_surface, Connection, Proxy, QueueHandle},
 };

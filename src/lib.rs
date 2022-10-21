@@ -12,3 +12,13 @@ pub mod result;
 pub mod sctk_event;
 pub mod settings;
 pub mod util;
+pub mod window;
+
+pub use application::{Application, run};
+pub use clipboard::Clipboard;
+pub use error::Error;
+pub use event_loop::proxy::Proxy;
+pub use settings::Settings;
+
+pub use iced_graphics::Viewport;
+pub use iced_native::window::Position;

@@ -6,7 +6,6 @@ pub mod seat;
 pub mod shell;
 
 use sctk::{
-    compositor::CompositorState,
     delegate_registry, delegate_shm,
     output::OutputState,
     reexports::client::{
@@ -15,7 +14,6 @@ use sctk::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::SeatState,
-    shell::{layer::LayerShellHandler, xdg::XdgShellState},
     shm::{ShmHandler, ShmState},
 };
 use std::fmt::Debug;

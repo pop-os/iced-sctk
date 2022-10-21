@@ -15,7 +15,7 @@ use sctk::{
 };
 
 use crate::{
-    dpi::{LogicalSize, PhysicalSize},
+    dpi::{PhysicalSize},
     event_loop::state::{SctkLayerSurface, SctkPopup, SctkWindow},
 };
 

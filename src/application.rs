@@ -22,7 +22,7 @@ use iced_native::{
     application::{self, StyleSheet},
     clipboard, mouse,
     widget::operation,
-    Element, Renderer,
+    Element, Renderer, command::platform_specific,
 };
 use sctk::{
     compositor::{CompositorHandler, CompositorState, Surface},
@@ -185,7 +185,7 @@ where
     }
 
     /// TODO(derezzedex)
-    fn close_requested(&self, window: ObjectId) -> Self::Message;
+    fn close_requested(&self, window: iced_native::window::Id) -> Self::Message;
 }
 
 /// Runs an [`Application`] with an executor, compositor, and the provided
@@ -721,8 +721,18 @@ fn run_command<A, E>(
                 current_cache = user_interface.into_cache();
                 *cache = current_cache;
             }
-            // ignore
-            command::Action::PlatformSpecific(_) => {}
+            command::Action::PlatformSpecific(platform_specific::Action::Wayland(platform_specific::wayland::Action::LayerSurface(layer_surface_action))) => {
+                match layer_surface_action {
+                    platform_specific::wayland::layer_surface::Action::LayerSurface { builder, o } => todo!(),
+                    platform_specific::wayland::layer_surface::Action::Size { width, height } => todo!(),
+                }
+            }
+            command::Action::PlatformSpecific(platform_specific::Action::Wayland(platform_specific::wayland::Action::Window(window_action))) => {
+                match window_action {
+                    platform_specific::wayland::window::Action::Window { builder, o } => todo!(),
+                }
+            }
+            _ => {}
         }
     }
 }
