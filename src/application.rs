@@ -22,7 +22,7 @@ use iced_native::{
     application::{self, StyleSheet},
     clipboard, mouse,
     widget::operation,
-    Element, Renderer, command::platform_specific,
+    Element, Renderer, command::platform_specific::{self, wayland::layer_surface::IcedLayerSurface},
 };
 use sctk::{
     compositor::{CompositorHandler, CompositorState, Surface},
@@ -66,6 +66,17 @@ use iced_graphics::{compositor, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
 use std::mem::ManuallyDrop;
+
+#[derive(Debug)]
+pub enum Event<Message> {
+    /// An [`Application`] generated message
+    Application(Message),
+
+    /// TODO
+    // Create a wrapper variant of `window::Event` type instead
+    // (maybe we should also allow users to listen/react to those internal messages?)
+    LayerSurface(platform_specific::wayland::layer_surface::Action<Message>),
+}
 
 pub struct IcedSctkState;
 
@@ -184,7 +195,7 @@ where
         false
     }
 
-    /// TODO(derezzedex)
+    /// TODO
     fn close_requested(&self, window: iced_native::window::Id) -> Self::Message;
 }
 
@@ -208,9 +219,17 @@ where
     let flags = settings.flags.clone();
     let exit_on_close_request = settings.exit_on_close_request;
     let is_layer_surface = matches!(settings.surface, settings::InitialSurface::LayerSurface(_));
-    let (mut event_loop, surface) =
-        SctkEventLoop::<A::Message>::new(settings).expect("Failed to initialize the event loop");
+    let mut event_loop =
+        SctkEventLoop::<A::Message>::new(&settings).expect("Failed to initialize the event loop");
+
+    let (id, surface) =  match &settings.surface {
+        settings::InitialSurface::LayerSurface(l) => event_loop.get_layer_surface(l.clone()),
+        settings::InitialSurface::XdgWindow(_) => todo!(),
+    };
     let init_id = surface.id();
+
+    let mut surface_ids = HashMap::from([(id, init_id.clone())]);
+
     let id = SurfaceId::new(&init_id);
     let (runtime, ev_proxy) = {
         let ev_proxy = event_loop.proxy();
@@ -242,7 +261,7 @@ where
             gl_context.get_proc_address(name.as_c_str())
         })?
     };
-    let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
+    let (mut sender, receiver) = mpsc::unbounded::<Event<A::Message>>();
 
     let mut instance = Box::pin(run_instance::<A, E, C>(
         application,
@@ -256,6 +275,7 @@ where
         layer_surfaces,
         popups,
         surfaces,
+        surface_ids,
         gl_context,
         init_command,
         exit_on_close_request,
@@ -272,15 +292,25 @@ where
         if let ControlFlow::ExitWithCode(_) = control_flow {
             return;
         }
-
-        sender.start_send(event).expect("Send event");
-
-        let poll = instance.as_mut().poll(&mut context);
-
-        *control_flow = match poll {
-            task::Poll::Pending => ControlFlow::Wait,
-            task::Poll::Ready(_) => ControlFlow::ExitWithCode(1),
+        let event = match event {
+            IcedSctkEvent::NewEvents(_) => todo!(),
+            IcedSctkEvent::UserEvent(event) => Some(event),
+            IcedSctkEvent::SctkEvent(_) => todo!(),
+            IcedSctkEvent::MainEventsCleared => todo!(),
+            IcedSctkEvent::RedrawRequested(_) => todo!(),
+            IcedSctkEvent::RedrawEventsCleared => todo!(),
+            IcedSctkEvent::LoopDestroyed => todo!(),
         };
+        if let Some(event) = event {
+            sender.start_send(Event::Application(event)).expect("Send event");
+
+            let poll = instance.as_mut().poll(&mut context);
+    
+            *control_flow = match poll {
+                task::Poll::Pending => ControlFlow::Wait,
+                task::Poll::Ready(_) => ControlFlow::ExitWithCode(1),
+            };
+        }
     });
 
     Ok(())
@@ -290,14 +320,15 @@ async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
     mut renderer: A::Renderer,
-    mut runtime: Runtime<E, proxy::Proxy<A::Message>, A::Message>,
-    mut ev_proxy: proxy::Proxy<A::Message>,
+    mut runtime: Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
+    mut ev_proxy: proxy::Proxy<Event<A::Message>>,
     mut debug: Debug,
-    mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
+    mut receiver: mpsc::UnboundedReceiver<Event<A::Message>>,
     mut windows: HashMap<SurfaceId, SctkWindow>,
     mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface>,
     mut popups: HashMap<SurfaceId, SctkPopup>,
     mut surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
+    mut surface_ids: HashMap<SurfaceId, ObjectId>,
     mut context: PossiblyCurrentContext,
     init_command: Command<A::Message>,
     exit_on_close_request: bool,
@@ -356,13 +387,8 @@ where
 
     while let Some(event) = receiver.next().await {
         match event {
-            IcedSctkEvent::NewEvents(_) => todo!(),
-            IcedSctkEvent::UserEvent(_) => todo!(),
-            IcedSctkEvent::SctkEvent(_) => todo!(),
-            IcedSctkEvent::MainEventsCleared => todo!(),
-            IcedSctkEvent::RedrawRequested(_) => todo!(),
-            IcedSctkEvent::RedrawEventsCleared => todo!(),
-            IcedSctkEvent::LoopDestroyed => todo!(),
+            Event::Application(_) => todo!(),
+            Event::LayerSurface(_) => todo!(),
         }
     }
 
@@ -454,7 +480,7 @@ where
         &self.viewport
     }
 
-    /// TODO(derezzedex)
+    /// TODO
     pub fn viewport_changed(&self) -> bool {
         self.viewport_changed
     }
@@ -543,7 +569,7 @@ where
         &mut self,
         application: &A,
         window: &SctkWindow,
-        proxy: &proxy::Proxy<A::Message>,
+        proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);
     }
@@ -559,7 +585,7 @@ where
         &mut self,
         application: &A,
         window: &SctkPopup,
-        proxy: &proxy::Proxy<A::Message>,
+        proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);
     }
@@ -575,7 +601,7 @@ where
         &mut self,
         application: &A,
         window: &SctkPopup,
-        proxy: &proxy::Proxy<A::Message>,
+        proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);
     }
@@ -594,8 +620,8 @@ pub(crate) fn update<A: Application, E: Executor>(
     cache: &mut user_interface::Cache,
     state: &State<A>,
     renderer: &mut A::Renderer,
-    runtime: &mut Runtime<E, proxy::Proxy<A::Message>, A::Message>,
-    proxy: &mut proxy::Proxy<A::Message>,
+    runtime: &mut Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
+    proxy: &mut proxy::Proxy<Event<A::Message>>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
     windows: &mut HashMap<SurfaceId, SctkWindow>,
@@ -628,7 +654,7 @@ pub(crate) fn update<A: Application, E: Executor>(
         );
     }
 
-    let subscription = application.subscription();
+    let subscription = application.subscription().map(|m| Event::Application(m));
     runtime.track(subscription);
 }
 
@@ -639,8 +665,8 @@ fn run_command<A, E>(
     state: &State<A>,
     renderer: &mut A::Renderer,
     command: Command<A::Message>,
-    runtime: &mut Runtime<E, proxy::Proxy<A::Message>, A::Message>,
-    proxy: &mut proxy::Proxy<A::Message>,
+    runtime: &mut Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
+    proxy: &mut proxy::Proxy<Event<A::Message>>,
     debug: &mut Debug,
     windows: &mut HashMap<SurfaceId, SctkWindow>,
     layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
@@ -701,7 +727,7 @@ fn run_command<A, E>(
                     renderer,
                     state.logical_size(),
                     debug,
-                    id.clone(), // TODO(derezzedex): run the operation on every widget tree
+                    id.clone(), // TODO: run the operation on every widget tree
                 );
 
                 while let Some(mut operation) = current_operation.take() {
@@ -710,7 +736,7 @@ fn run_command<A, E>(
                     match operation.finish() {
                         operation::Outcome::None => {}
                         operation::Outcome::Some(message) => {
-                            proxy.send_event(message);
+                            proxy.send_event(Event::Application(message));
                         }
                         operation::Outcome::Chain(next) => {
                             current_operation = Some(next);
@@ -722,14 +748,11 @@ fn run_command<A, E>(
                 *cache = current_cache;
             }
             command::Action::PlatformSpecific(platform_specific::Action::Wayland(platform_specific::wayland::Action::LayerSurface(layer_surface_action))) => {
-                match layer_surface_action {
-                    platform_specific::wayland::layer_surface::Action::LayerSurface { builder, o } => todo!(),
-                    platform_specific::wayland::layer_surface::Action::Size { width, height } => todo!(),
-                }
+                proxy.send_event(Event::LayerSurface(layer_surface_action));
             }
             command::Action::PlatformSpecific(platform_specific::Action::Wayland(platform_specific::wayland::Action::Window(window_action))) => {
                 match window_action {
-                    platform_specific::wayland::window::Action::Window { builder, o } => todo!(),
+                    platform_specific::wayland::window::Action::Window { builder, .. } => todo!(),
                 }
             }
             _ => {}

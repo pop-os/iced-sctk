@@ -17,7 +17,7 @@ use crate::{
         IcedSctkEvent, SctkEvent, StartCause, SurfaceCompositorUpdate, SurfaceUserRequest,
         WindowEventVariant,
     },
-    settings,
+    settings, application::Event,
 };
 use glutin::display;
 use iced_futures::futures::channel::mpsc;
@@ -93,7 +93,7 @@ pub struct SctkEventLoop<T> {
     /// A proxy to wake up event loop.
     pub event_loop_awakener: calloop::ping::Ping,
     /// A sender for submitting user events in the event loop
-    pub user_events_sender: calloop::channel::Sender<T>,
+    pub user_events_sender: calloop::channel::Sender<Event<T>>,
     pub(crate) state: SctkState<T>,
 }
 
@@ -102,8 +102,8 @@ where
     T: 'static + Debug,
 {
     pub(crate) fn new<F: Sized>(
-        settings: settings::Settings<F>,
-    ) -> Result<(Self, WlSurface), ConnectError> {
+        settings: &settings::Settings<F>,
+    ) -> Result<Self, ConnectError> {
         let connection = Connection::connect_to_env()?;
         let display = connection.display();
         let (globals, mut event_queue) = registry_queue_init(&connection).unwrap();
@@ -144,7 +144,7 @@ where
             .register_dispatcher(wayland_dispatcher.clone())
             .unwrap();
 
-        let mut self_ = Self {
+        Ok(Self {
             event_loop,
             wayland_dispatcher,
             state: SctkState {
@@ -184,64 +184,60 @@ where
             features: Default::default(),
             event_loop_awakener: ping,
             user_events_sender,
-        };
-
-        let wl_surface = self_
-            .state
-            .compositor_state
-            .create_surface(&self_.state.queue_handle)
-            .expect("failed to create the initial surface");
-        match settings.surface {
-            settings::InitialSurface::LayerSurface(IcedLayerSurface {
-                layer,
-                keyboard_interactivity,
-                anchor,
-                output,
-                namespace,
-                margin,
-                size,
-                exclusive_zone,
-            }) => {
-                // TODO output handling before this
-                let layer_surface = LayerSurface::builder()
-                    .anchor(anchor)
-                    .keyboard_interactivity(keyboard_interactivity)
-                    .margin(margin.top, margin.right, margin.bottom, margin.left)
-                    .size(size)
-                    .namespace(namespace)
-                    .exclusive_zone(exclusive_zone)
-                    .map(
-                        &self_.state.queue_handle,
-                        &self_.state.layer_shell,
-                        wl_surface.clone(),
-                        layer,
-                    )
-                    .expect("failed to create initial layer surface");
-                self_.state.layer_surfaces.insert(
-                    wl_surface.id(),
-                    SctkLayerSurface {
-                        surface: layer_surface,
-                        requested_size: None,
-                        current_size: None,
-                        layer,
-                        // builder needs to be refactored such that these fields are accessible
-                        anchor,
-                        keyboard_interactivity,
-                        margin,
-                        exclusive_zone,
-                        last_configure: None,
-                    },
-                );
-            }
-            settings::InitialSurface::XdgWindow(builder) => {
-                todo!()
-            }
-        };
-        Ok((self_, wl_surface))
+        })
     }
 
-    pub fn proxy(&self) -> proxy::Proxy<T> {
+    pub fn proxy(&self) -> proxy::Proxy<Event<T>> {
         proxy::Proxy::new(self.user_events_sender.clone())
+    }
+
+    pub fn get_layer_surface(&mut self, IcedLayerSurface {
+        id,
+        layer,
+        keyboard_interactivity,
+        anchor,
+        output,
+        namespace,
+        margin,
+        size,
+        exclusive_zone,
+    }: IcedLayerSurface) -> (iced_native::window::Id, WlSurface){
+        let wl_surface = self
+        .state
+        .compositor_state
+        .create_surface(&self.state.queue_handle)
+        .expect("failed to create the initial surface");
+
+        let layer_surface = LayerSurface::builder()
+        .anchor(anchor)
+        .keyboard_interactivity(keyboard_interactivity)
+        .margin(margin.top, margin.right, margin.bottom, margin.left)
+        .size(size)
+        .namespace(namespace)
+        .exclusive_zone(exclusive_zone)
+        .map(
+            &self.state.queue_handle,
+            &self.state.layer_shell,
+            wl_surface.clone(),
+            layer,
+        )
+        .expect("failed to create initial layer surface");
+        self.state.layer_surfaces.insert(
+            wl_surface.id(),
+            SctkLayerSurface {
+                surface: layer_surface,
+                requested_size: None,
+                current_size: None,
+                layer,
+                // builder needs to be refactored such that these fields are accessible
+                anchor,
+                keyboard_interactivity,
+                margin,
+                exclusive_zone,
+                last_configure: None,
+            },
+        );
+        (id, wl_surface)
     }
 
     pub fn run_return<F>(&mut self, mut callback: F) -> i32
@@ -381,12 +377,16 @@ where
             // user events indirectly via callback to the user.
             let user_events = self.state.pending_user_events.drain(..).collect::<Vec<_>>();
             for user_event in user_events {
-                sticky_exit_callback(
-                    IcedSctkEvent::UserEvent(user_event),
-                    &self.state,
-                    &mut control_flow,
-                    &mut callback,
-                );
+                match user_event {
+                    Event::Application(user_event) => sticky_exit_callback(
+                        IcedSctkEvent::UserEvent(user_event),
+                        &self.state,
+                        &mut control_flow,
+                        &mut callback,
+                    ),
+                    Event::LayerSurface(_) => todo!(),
+                }
+                
             }
 
             // Process 'new' pending updates from compositor.

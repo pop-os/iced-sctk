@@ -9,7 +9,7 @@ use crate::{
     dpi::LogicalSize,
     egl::init_egl,
     handlers::shell::xdg_window::WindowRequest,
-    sctk_event::{IcedSctkEvent, SctkEvent, SurfaceCompositorUpdate, SurfaceUserRequest},
+    sctk_event::{IcedSctkEvent, SctkEvent, SurfaceCompositorUpdate, SurfaceUserRequest}, application::Event,
 };
 use futures::channel::mpsc;
 use glutin::{
@@ -19,7 +19,7 @@ use glutin::{
     surface::WindowSurface,
 };
 use iced_native::{
-    command::platform_specific::wayland::layer_surface::IcedMargin, keyboard::Modifiers,
+    command::platform_specific::wayland::layer_surface::IcedMargin, keyboard::Modifiers, window::Id,
 };
 use sctk::{
     compositor::CompositorState,
@@ -168,7 +168,7 @@ pub struct SctkState<T> {
     pub popup_user_requests: HashMap<ObjectId, SurfaceUserRequest>,
 
     /// pending user events
-    pub pending_user_events: Vec<T>,
+    pub pending_user_events: Vec<Event<T>>,
 
     // handles
     pub(crate) queue_handle: QueueHandle<Self>,
@@ -191,33 +191,5 @@ pub struct SctkState<T> {
 // where
 //     T: 'static + Debug,
 // {
-//     pub fn get_surface(
-//         &mut self,
-//         surface: &wl_surface::WlSurface,
-//         width: u32,
-//         height: u32,
-//     ) -> egl::surface::Surface<glutin::surface::WindowSurface> {
-//         if let (Some(display), Some(config)) = (self.display.as_ref(), self.config.as_ref()) {
-//             let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
-//             window_handle.surface = surface.id().as_ptr() as *mut _;
-//             let window_handle = raw_window_handle::RawWindowHandle::Wayland(window_handle);
-//             let surface_attrs =
-//                 glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::default().build(
-//                     window_handle,
-//                     NonZeroU32::new(width).unwrap(),
-//                     NonZeroU32::new(height).unwrap(),
-//                 );
-//             let surface = unsafe { display.create_window_surface(&config, &surface_attrs) }
-//                 .expect("Failed to create surface");
-//             surface
-//         } else {
-//             let (display, context, config, surface) = init_egl(surface, width, height);
-//             let context = context.make_current(&surface).unwrap();
 
-//             self.display.replace(display);
-//             self.context.replace(context);
-//             self.config.replace(config);
-//             surface
-//         }
-//     }
 // }

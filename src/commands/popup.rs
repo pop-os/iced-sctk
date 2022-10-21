@@ -1,6 +1,6 @@
 //! Interact with the popups of your application.
 use iced_native::{command::Command, window};
-
+use iced_native::window::Id as SurfaceId;
 pub use window::{Event, Mode};
 
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:get_popup>
