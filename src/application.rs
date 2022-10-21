@@ -595,41 +595,41 @@ pub(crate) fn update<A: Application, E: Executor>(
     state: &State<A>,
     renderer: &mut A::Renderer,
     runtime: &mut Runtime<E, proxy::Proxy<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<(SurfaceId, A::Message)>,
+    proxy: &mut proxy::Proxy<A::Message>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
-    windows: &mut HashMap<ObjectId, SctkWindow>,
-    layer_surfaces: &mut HashMap<ObjectId, SctkLayerSurface>,
-    popups: &mut HashMap<ObjectId, SctkPopup>,
+    windows: &mut HashMap<SurfaceId, SctkWindow>,
+    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
+    popups: &mut HashMap<SurfaceId, SctkPopup>,
     graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
 {
-    // for message in messages.drain(..) {
-    //     debug.log_message(&message);
+    for message in messages.drain(..) {
+        debug.log_message(&message);
 
-    //     debug.update_started();
-    //     let command = runtime.enter(|| application.update(message));
-    //     debug.update_finished();
+        debug.update_started();
+        let command = runtime.enter(|| application.update(message));
+        debug.update_finished();
 
-    //     run_command(
-    //         application,
-    //         cache,
-    //         state,
-    //         renderer,
-    //         command,
-    //         runtime,
-    //         clipboard,
-    //         proxy,
-    //         debug,
-    //         windows,
-    //         window_ids,
-    //         graphics_info,
-    //     );
-    // }
+        run_command(
+            application,
+            cache,
+            state,
+            renderer,
+            command,
+            runtime,
+            proxy,
+            debug,
+            windows,
+            layer_surfaces,
+            popups,
+            graphics_info,
+        );
+    }
 
-    // let subscription = application.subscription().map(Event::Application);
-    // runtime.track(subscription);
+    let subscription = application.subscription();
+    runtime.track(subscription);
 }
 
 /// Runs the actions of a [`Command`].
