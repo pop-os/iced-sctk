@@ -74,8 +74,8 @@ pub fn get_surface(
     let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
     window_handle.surface = surface.id().as_ptr() as *mut _;
     let window_handle = raw_window_handle::RawWindowHandle::Wayland(window_handle);
-    let surface_attrs =
-        glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::default().build(
+    let surface_attrs = glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::default()
+        .build(
             window_handle,
             NonZeroU32::new(width).unwrap(),
             NonZeroU32::new(height).unwrap(),

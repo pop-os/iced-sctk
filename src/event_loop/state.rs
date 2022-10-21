@@ -18,7 +18,9 @@ use glutin::{
     prelude::{GlDisplay, NotCurrentGlContextSurfaceAccessor},
     surface::WindowSurface,
 };
-use iced_native::{keyboard::Modifiers, command::platform_specific::wayland::layer_surface::IcedMargin};
+use iced_native::{
+    command::platform_specific::wayland::layer_surface::IcedMargin, keyboard::Modifiers,
+};
 use sctk::{
     compositor::CompositorState,
     event_loop::WaylandSource,
@@ -134,18 +136,9 @@ pub struct SctkState<T> {
     /// to be sent to other threads, they live on the event loop's thread
     /// and requests from winit's windows are being forwarded to them either via
     /// `WindowUpdate` or buffer on the associated with it `WindowHandle`.
-    pub(crate) windows: HashMap<
-        ObjectId,
-            SctkWindow,
-    >,
-    pub(crate) layer_surfaces: HashMap<
-        ObjectId,
-            SctkLayerSurface,
-    >,
-    pub(crate) popups: HashMap<
-        ObjectId,
-            SctkPopup,
-    >,
+    pub(crate) windows: HashMap<ObjectId, SctkWindow>,
+    pub(crate) layer_surfaces: HashMap<ObjectId, SctkLayerSurface>,
+    pub(crate) popups: HashMap<ObjectId, SctkPopup>,
     pub(crate) kbd_focus: Option<WlSurface>,
 
     /// Window updates, which are coming from SCTK or the compositor, which require
@@ -175,7 +168,7 @@ pub struct SctkState<T> {
     pub popup_user_requests: HashMap<ObjectId, SurfaceUserRequest>,
 
     /// pending user events
-    pub pending_user_events: Vec<(iced_native::window::Id, T)>,
+    pub pending_user_events: Vec<T>,
 
     // handles
     pub(crate) queue_handle: QueueHandle<Self>,

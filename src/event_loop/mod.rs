@@ -1,6 +1,6 @@
 pub mod control_flow;
-pub mod state;
 pub mod proxy;
+pub mod state;
 
 use std::{
     cell::RefCell,
@@ -16,11 +16,14 @@ use crate::{
     sctk_event::{
         IcedSctkEvent, SctkEvent, StartCause, SurfaceCompositorUpdate, SurfaceUserRequest,
         WindowEventVariant,
-    }, settings,
+    },
+    settings,
 };
 use glutin::display;
 use iced_futures::futures::channel::mpsc;
-use iced_native::{keyboard::Modifiers, command::platform_specific::wayland::layer_surface::IcedLayerSurface};
+use iced_native::{
+    command::platform_specific::wayland::layer_surface::IcedLayerSurface, keyboard::Modifiers,
+};
 use sctk::{
     compositor::CompositorState,
     event_loop::WaylandSource,
@@ -40,7 +43,7 @@ use sctk::{
                 wl_surface::{self, WlSurface},
                 wl_touch::WlTouch,
             },
-            ConnectError, Connection, DispatchError, QueueHandle, Proxy,
+            ConnectError, Connection, DispatchError, Proxy, QueueHandle,
         },
     },
     registry::RegistryState,
@@ -59,7 +62,7 @@ use wayland_backend::client::WaylandError;
 
 use self::{
     control_flow::ControlFlow,
-    state::{SctkState, SctkWindow, SctkLayerSurface},
+    state::{SctkLayerSurface, SctkState, SctkWindow},
 };
 
 // impl SctkSurface {
@@ -90,7 +93,7 @@ pub struct SctkEventLoop<T> {
     /// A proxy to wake up event loop.
     pub event_loop_awakener: calloop::ping::Ping,
     /// A sender for submitting user events in the event loop
-    pub user_events_sender: calloop::channel::Sender<(iced_native::window::Id, T)>,
+    pub user_events_sender: calloop::channel::Sender<T>,
     pub(crate) state: SctkState<T>,
 }
 
@@ -98,7 +101,9 @@ impl<T> SctkEventLoop<T>
 where
     T: 'static + Debug,
 {
-    pub(crate) fn new<F: Sized>(settings: settings::Settings<F>) -> Result<(Self, WlSurface), ConnectError> {
+    pub(crate) fn new<F: Sized>(
+        settings: settings::Settings<F>,
+    ) -> Result<(Self, WlSurface), ConnectError> {
         let connection = Connection::connect_to_env()?;
         let display = connection.display();
         let (globals, mut event_queue) = registry_queue_init(&connection).unwrap();
@@ -109,20 +114,24 @@ where
         let registry_state = RegistryState::new(&connection, &qh);
 
         let (ping, ping_source) = calloop::ping::make_ping().unwrap();
-        loop_handle.insert_source(ping_source, |_, _, state| {
-            // Drain events here as well to account for application doing batch event processing
-            // on RedrawEventsCleared.
-            // shim::handle_window_requests(state);
-            todo!()
-        }).unwrap();
+        loop_handle
+            .insert_source(ping_source, |_, _, state| {
+                // Drain events here as well to account for application doing batch event processing
+                // on RedrawEventsCleared.
+                // shim::handle_window_requests(state);
+                todo!()
+            })
+            .unwrap();
         let (user_events_sender, user_events_channel) = calloop::channel::channel();
 
-        loop_handle.insert_source(user_events_channel, |event, _, state| match event {
-            calloop::channel::Event::Msg(e) => {
-                state.pending_user_events.push(e);
-            }
-            calloop::channel::Event::Closed => {}
-        }).unwrap();
+        loop_handle
+            .insert_source(user_events_channel, |event, _, state| match event {
+                calloop::channel::Event::Msg(e) => {
+                    state.pending_user_events.push(e);
+                }
+                calloop::channel::Event::Closed => {}
+            })
+            .unwrap();
         let wayland_source = WaylandSource::new(event_queue).unwrap();
 
         let wayland_dispatcher =
@@ -177,27 +186,56 @@ where
             user_events_sender,
         };
 
-        let wl_surface = self_.state.compositor_state.create_surface(&self_.state.queue_handle).expect("failed to create the initial surface");
+        let wl_surface = self_
+            .state
+            .compositor_state
+            .create_surface(&self_.state.queue_handle)
+            .expect("failed to create the initial surface");
         match settings.surface {
-            settings::InitialSurface::LayerSurface(IcedLayerSurface { layer, keyboard_interactivity, anchor, output, namespace, margin, size, exclusive_zone }) => {
+            settings::InitialSurface::LayerSurface(IcedLayerSurface {
+                layer,
+                keyboard_interactivity,
+                anchor,
+                output,
+                namespace,
+                margin,
+                size,
+                exclusive_zone,
+            }) => {
                 // TODO output handling before this
-                let layer_surface = LayerSurface::builder().anchor(anchor).keyboard_interactivity(keyboard_interactivity).margin(margin.top, margin.right, margin.bottom, margin.left).size(size).namespace(namespace).exclusive_zone(exclusive_zone).map(&self_.state.queue_handle, &self_.state.layer_shell, wl_surface.clone(), layer).expect("failed to create initial layer surface");
-                self_.state.layer_surfaces.insert(wl_surface.id(), SctkLayerSurface {
-                    surface: layer_surface,
-                    requested_size: None,
-                    current_size: None,
-                    layer,
-                    // builder needs to be refactored such that these fields are accessible
-                    anchor,
-                    keyboard_interactivity,
-                    margin,
-                    exclusive_zone,
-                    last_configure: None,
-                });
-            },
+                let layer_surface = LayerSurface::builder()
+                    .anchor(anchor)
+                    .keyboard_interactivity(keyboard_interactivity)
+                    .margin(margin.top, margin.right, margin.bottom, margin.left)
+                    .size(size)
+                    .namespace(namespace)
+                    .exclusive_zone(exclusive_zone)
+                    .map(
+                        &self_.state.queue_handle,
+                        &self_.state.layer_shell,
+                        wl_surface.clone(),
+                        layer,
+                    )
+                    .expect("failed to create initial layer surface");
+                self_.state.layer_surfaces.insert(
+                    wl_surface.id(),
+                    SctkLayerSurface {
+                        surface: layer_surface,
+                        requested_size: None,
+                        current_size: None,
+                        layer,
+                        // builder needs to be refactored such that these fields are accessible
+                        anchor,
+                        keyboard_interactivity,
+                        margin,
+                        exclusive_zone,
+                        last_configure: None,
+                    },
+                );
+            }
             settings::InitialSurface::XdgWindow(builder) => {
                 todo!()
-            },
+            }
         };
         Ok((self_, wl_surface))
     }

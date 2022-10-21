@@ -14,7 +14,10 @@ use sctk::{
     },
 };
 
-use crate::{dpi::{LogicalSize, PhysicalSize}, event_loop::state::{SctkWindow, SctkPopup, SctkLayerSurface}};
+use crate::{
+    dpi::{LogicalSize, PhysicalSize},
+    event_loop::state::{SctkLayerSurface, SctkPopup, SctkWindow},
+};
 
 #[derive(Debug, Clone)]
 pub enum IcedSctkEvent<T> {
@@ -27,7 +30,7 @@ pub enum IcedSctkEvent<T> {
     NewEvents(StartCause),
 
     /// Any user event from iced
-    UserEvent((iced_native::window::Id, T)),
+    UserEvent(T),
     /// An event produced by sctk
     SctkEvent(SctkEvent),
 
@@ -167,7 +170,10 @@ pub enum WindowEventVariant {
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
     WmCapabilities(Vec<u32>),
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:configure_bounds>
-    ConfigureBounds { width: u32, height: u32 },
+    ConfigureBounds {
+        width: u32,
+        height: u32,
+    },
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:configure>
     Configure(WindowConfigure),
 }
@@ -182,7 +188,9 @@ pub enum PopupEventVariant {
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:configure>
     Configure(PopupConfigure),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:repositioned>
-    RepositionionedPopup { token: u32 },
+    RepositionionedPopup {
+        token: u32,
+    },
 }
 
 #[derive(Debug, Clone)]

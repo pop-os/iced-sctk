@@ -1,19 +1,22 @@
 use crate::{
     conversion,
     dpi::PhysicalPosition,
+    egl::init_egl,
     error::{self, Error},
     event_loop::{
         self,
         control_flow::ControlFlow,
-        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow}, SctkEventLoop, proxy::{Proxy, self},
+        proxy::{self, Proxy},
+        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
+        SctkEventLoop,
     },
     renderer,
     sctk_event::{
         IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent, WindowEventVariant,
     },
-    settings, Command, Debug, Executor, Program, Runtime, Size, Subscription, egl::init_egl,
+    settings, Command, Debug, Executor, Program, Runtime, Size, Subscription,
 };
-use futures::{task, channel::mpsc};
+use futures::{channel::mpsc, task, Future};
 use iced_native::{
     application::{self, StyleSheet},
     clipboard,
@@ -40,15 +43,23 @@ use sctk::{
     },
     seat::keyboard::Modifiers,
 };
-use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32, process::id, hash::Hash};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString},
+    fmt,
+    hash::Hash,
+    marker::PhantomData,
+    num::NonZeroU32,
+    process::id,
+};
 use wayland_backend::client::ObjectId;
 
+use glow::HasContext;
 use glutin::{api::egl, config::ConfigSurfaceTypes, prelude::*, surface::WindowSurface};
 use iced_graphics::{compositor, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
-use std::mem::ManuallyDrop;
 use iced_native::window::Id as SurfaceId;
-use glow::HasContext;
+use std::mem::ManuallyDrop;
 
 pub struct IcedSctkState;
 
@@ -173,16 +184,18 @@ where
     E: Executor + 'static,
     C: window::GLCompositor<Renderer = A::Renderer> + 'static,
     <A::Renderer as iced_native::Renderer>::Theme: StyleSheet,
-    A::Flags: Clone
+    A::Flags: Clone,
 {
     let mut debug = Debug::new();
     debug.startup_started();
     let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
     let flags = settings.flags.clone();
+    let exit_on_close_request = settings.exit_on_close_request;
 
-    let (event_loop, surface) = SctkEventLoop::<A::Message>::new(settings).expect("Failed to initialize the event loop");
-    
+    let (mut event_loop, surface) =
+        SctkEventLoop::<A::Message>::new(settings).expect("Failed to initialize the event loop");
+
     let (runtime, ev_proxy) = {
         let ev_proxy = event_loop.proxy();
         let executor = E::new().map_err(Error::ExecutorCreationFailed)?;
@@ -198,43 +211,73 @@ where
 
     let windows: HashMap<SurfaceId, SctkWindow> = HashMap::new();
     let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface> = HashMap::new();
+    let popups: HashMap<SurfaceId, SctkPopup> = HashMap::new();
 
     let (display, context, config, surface) = init_egl(&surface, 1, 1);
 
     let context = context.make_current(&surface).unwrap();
 
-    let (mut sender, receiver) = mpsc::unbounded::<(iced_native::window::Id, A::Message)>();
+    #[allow(unsafe_code)]
+    let (compositor, renderer) = unsafe {
+        C::new(compositor_settings, |name| {
+            let name = CString::new(name).unwrap();
+            context.get_proc_address(name.as_c_str())
+        })?
+    };
+    let (mut sender, receiver) =
+        mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
-    // let mut instance = Box::pin(run_instance::<A, E, C>(
-    //     application,
-    //     compositor,
-    //     renderer,
-    //     runtime,
-    //     ev_proxy,
-    //     debug,
-    //     receiver,
-    //     init_command,
-    //     windows,
-    // ));
+    let mut instance = Box::pin(run_instance::<A, E, C>(
+        application,
+        compositor,
+        renderer,
+        runtime,
+        ev_proxy,
+        debug,
+        receiver,
+        windows,
+        layer_surfaces,
+        popups,
+        init_command,
+        exit_on_close_request,
+    ));
 
     let mut context = task::Context::from_waker(task::noop_waker_ref());
 
 
-    Ok(())}
+    let _ = event_loop.run_return(move |event, event_loop, control_flow| {
+        if let ControlFlow::ExitWithCode(_) = control_flow {
+            return;
+        }
+
+        sender.start_send(event).expect("Send event");
+
+        let poll = instance.as_mut().poll(&mut context);
+
+        *control_flow = match poll {
+            task::Poll::Pending => ControlFlow::Wait,
+            task::Poll::Ready(_) => ControlFlow::ExitWithCode(1),
+        };
+    });
+
+    Ok(())
+}
 
 async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
     mut renderer: A::Renderer,
     mut runtime: Runtime<E, proxy::Proxy<A::Message>, A::Message>,
-    mut proxy: proxy::Proxy<A::Message>,
+    mut ev_proxy: proxy::Proxy<A::Message>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
-    mut windows: HashMap<ObjectId, SctkWindow>,
-    mut layer_surfaces: HashMap<ObjectId, SctkLayerSurface>,
-    mut popups: HashMap<ObjectId, SctkPopup>,
+    mut windows: HashMap<SurfaceId, SctkWindow>,
+    mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface>,
+    mut popups: HashMap<SurfaceId, SctkPopup>,
+    init_command: Command<A::Message>,
     exit_on_close_request: bool,
-) -> Result<(), Error> where
+) -> Result<(), Error>
+where
     A: Application + 'static,
     E: Executor + 'static,
     C: window::GLCompositor<Renderer = A::Renderer> + 'static,
@@ -505,7 +548,7 @@ fn run_command<A, E>(
     renderer: &mut A::Renderer,
     command: Command<A::Message>,
     runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<(SurfaceId, A::Message)>,
+    proxy: &mut calloop::channel::Sender<A::Message>,
     debug: &mut Debug,
     windows: &mut HashMap<SurfaceId, SctkWindow>,
     layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
@@ -518,7 +561,6 @@ fn run_command<A, E>(
 {
     use iced_native::command;
     use iced_native::system;
-    use iced_native::window;
 
     let id = &state.id;
 
@@ -535,7 +577,7 @@ fn run_command<A, E>(
                     todo!();
                 }
             },
-            command::Action::Window(action) => {
+            command::Action::Window(id, action) => {
                 todo!()
             }
             command::Action::System(action) => match action {
@@ -576,9 +618,7 @@ fn run_command<A, E>(
                     match operation.finish() {
                         operation::Outcome::None => {}
                         operation::Outcome::Some(message) => {
-                            proxy
-                                .send((id.clone(), message))
-                                .expect("Send message to event loop");
+                            proxy.send(message).expect("Send message to event loop");
                         }
                         operation::Outcome::Chain(next) => {
                             current_operation = Some(next);
@@ -587,7 +627,8 @@ fn run_command<A, E>(
                 }
 
                 current_cache = user_interface.into_cache();
-                *cache = current_cache;            }
+                *cache = current_cache;
+            }
             // ignore
             command::Action::PlatformSpecific(_) => {}
         }

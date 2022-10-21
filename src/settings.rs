@@ -1,7 +1,8 @@
 use iced_native::command::platform_specific::wayland::layer_surface::IcedLayerSurface;
-use sctk::shell::{layer::{LayerSurfaceBuilder, LayerSurface, Layer}, xdg::window::WindowBuilder};
-
-
+use sctk::shell::{
+    layer::{Layer, LayerSurface, LayerSurfaceBuilder},
+    xdg::window::WindowBuilder,
+};
 
 #[derive(Debug)]
 pub struct Settings<Flags> {
@@ -14,13 +15,15 @@ pub struct Settings<Flags> {
     /// optional name and size of a custom pointer theme
     pub ptr_theme: Option<(String, u32)>,
     /// surface
-    pub surface: InitialSurface
+    pub surface: InitialSurface,
+    /// whether the application should exit on close of all windows
+    pub exit_on_close_request: bool,
 }
 
 #[derive(Debug)]
 pub enum InitialSurface {
     LayerSurface(IcedLayerSurface),
-    XdgWindow(WindowBuilder)
+    XdgWindow(WindowBuilder),
 }
 
 impl Default for InitialSurface {
