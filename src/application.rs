@@ -1,4 +1,5 @@
 use crate::{
+    commands::popup,
     conversion,
     dpi::PhysicalPosition,
     egl::init_egl,
@@ -6,7 +7,7 @@ use crate::{
     event_loop::{
         self,
         control_flow::ControlFlow,
-        proxy::{self, Proxy},
+        proxy,
         state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
         SctkEventLoop,
     },
@@ -16,19 +17,19 @@ use crate::{
     },
     settings, Command, Debug, Executor, Program, Runtime, Size, Subscription,
 };
-use futures::{channel::mpsc, task, Future};
+use futures::{channel::mpsc, task, Future, StreamExt};
 use iced_native::{
     application::{self, StyleSheet},
-    clipboard,
+    clipboard, mouse,
     widget::operation,
     Element, Renderer,
 };
 use sctk::{
-    compositor::{CompositorHandler, CompositorState},
+    compositor::{CompositorHandler, CompositorState, Surface},
     delegate_compositor, delegate_output, delegate_registry, delegate_xdg_shell,
     delegate_xdg_window,
     output::{OutputHandler, OutputState},
-    reexports::calloop,
+    reexports::{calloop, client::Proxy},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::xdg::{
@@ -55,7 +56,12 @@ use std::{
 use wayland_backend::client::ObjectId;
 
 use glow::HasContext;
-use glutin::{api::egl, config::ConfigSurfaceTypes, prelude::*, surface::WindowSurface};
+use glutin::{
+    api::egl::{self, context::PossiblyCurrentContext},
+    config::ConfigSurfaceTypes,
+    prelude::*,
+    surface::WindowSurface,
+};
 use iced_graphics::{compositor, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
@@ -100,17 +106,26 @@ where
     /// Returns the widgets to display in the [`Application`].
     ///
     /// These widgets can produce __messages__ based on user interaction.
-    fn view_window(&self, window: ObjectId) -> Element<'_, Self::Message, Self::Renderer>;
+    fn view_window(
+        &self,
+        window: iced_native::window::Id,
+    ) -> Element<'_, Self::Message, Self::Renderer>;
 
     /// Returns the widgets to display in the [`Application`].
     ///
     /// These widgets can produce __messages__ based on user interaction.
-    fn view_popup(&self, window: ObjectId) -> Element<'_, Self::Message, Self::Renderer>;
+    fn view_popup(
+        &self,
+        window: iced_native::window::Id,
+    ) -> Element<'_, Self::Message, Self::Renderer>;
 
     /// Returns the widgets to display in the [`Application`].
     ///
     /// These widgets can produce __messages__ based on user interaction.
-    fn view_layer_surface(&self, window: ObjectId) -> Element<'_, Self::Message, Self::Renderer>;
+    fn view_layer_surface(
+        &self,
+        window: iced_native::window::Id,
+    ) -> Element<'_, Self::Message, Self::Renderer>;
 
     /// Initializes the [`Application`] with the flags provided to
     /// [`run`] as part of the [`Settings`].
@@ -192,10 +207,11 @@ where
 
     let flags = settings.flags.clone();
     let exit_on_close_request = settings.exit_on_close_request;
-
+    let is_layer_surface = matches!(settings.surface, settings::InitialSurface::LayerSurface(_));
     let (mut event_loop, surface) =
         SctkEventLoop::<A::Message>::new(settings).expect("Failed to initialize the event loop");
-
+    let init_id = surface.id();
+    let id = SurfaceId::new(&init_id);
     let (runtime, ev_proxy) = {
         let ev_proxy = event_loop.proxy();
         let executor = E::new().map_err(Error::ExecutorCreationFailed)?;
@@ -215,17 +231,18 @@ where
 
     let (display, context, config, surface) = init_egl(&surface, 1, 1);
 
-    let context = context.make_current(&surface).unwrap();
+    let gl_context = context.make_current(&surface).unwrap();
+    let mut surfaces = HashMap::new();
+    surfaces.insert(id, surface);
 
     #[allow(unsafe_code)]
     let (compositor, renderer) = unsafe {
         C::new(compositor_settings, |name| {
             let name = CString::new(name).unwrap();
-            context.get_proc_address(name.as_c_str())
+            gl_context.get_proc_address(name.as_c_str())
         })?
     };
-    let (mut sender, receiver) =
-        mpsc::unbounded::<IcedSctkEvent<A::Message>>();
+    let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
     let mut instance = Box::pin(run_instance::<A, E, C>(
         application,
@@ -238,12 +255,18 @@ where
         windows,
         layer_surfaces,
         popups,
+        surfaces,
+        gl_context,
         init_command,
         exit_on_close_request,
+        if is_layer_surface {
+            SurfaceIdWrapper::LayerSurface(id)
+        } else {
+            SurfaceIdWrapper::Window(id)
+        },
     ));
 
     let mut context = task::Context::from_waker(task::noop_waker_ref());
-
 
     let _ = event_loop.run_return(move |event, event_loop, control_flow| {
         if let ControlFlow::ExitWithCode(_) = control_flow {
@@ -274,8 +297,11 @@ async fn run_instance<A, E, C>(
     mut windows: HashMap<SurfaceId, SctkWindow>,
     mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface>,
     mut popups: HashMap<SurfaceId, SctkPopup>,
+    mut surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
+    mut context: PossiblyCurrentContext,
     init_command: Command<A::Message>,
     exit_on_close_request: bool,
+    init_id: SurfaceIdWrapper,
 ) -> Result<(), Error>
 where
     A: Application + 'static,
@@ -283,9 +309,72 @@ where
     C: window::GLCompositor<Renderer = A::Renderer> + 'static,
     <A::Renderer as iced_native::Renderer>::Theme: StyleSheet,
 {
-    todo!()
+    let mut cache = user_interface::Cache::default();
+
+    let id = match init_id {
+        SurfaceIdWrapper::LayerSurface(id) => id,
+        SurfaceIdWrapper::Window(id) => id,
+        SurfaceIdWrapper::Popup(id) => id,
+    };
+    let state = State::new(&application, init_id);
+
+    let user_interface = build_user_interface(
+        &application,
+        user_interface::Cache::default(),
+        &mut renderer,
+        state.logical_size(),
+        &mut debug,
+        init_id,
+    );
+    let mut states = HashMap::from([(id, state)]);
+    let mut interfaces = ManuallyDrop::new(HashMap::from([(id, user_interface)]));
+
+    {
+        let state = states.get(&id).unwrap();
+
+        run_command(
+            &application,
+            &mut cache,
+            state,
+            &mut renderer,
+            init_command,
+            &mut runtime,
+            &mut ev_proxy,
+            &mut debug,
+            &mut windows,
+            &mut layer_surfaces,
+            &mut popups,
+            || compositor.fetch_information(),
+        );
+    }
+
+    let mut mouse_interaction = mouse::Interaction::default();
+    let mut events: Vec<IcedSctkEvent<A::Message>> = Vec::new();
+    let mut messages: Vec<A::Message> = Vec::new();
+
+    debug.startup_finished();
+
+    while let Some(event) = receiver.next().await {
+        match event {
+            IcedSctkEvent::NewEvents(_) => todo!(),
+            IcedSctkEvent::UserEvent(_) => todo!(),
+            IcedSctkEvent::SctkEvent(_) => todo!(),
+            IcedSctkEvent::MainEventsCleared => todo!(),
+            IcedSctkEvent::RedrawRequested(_) => todo!(),
+            IcedSctkEvent::RedrawEventsCleared => todo!(),
+            IcedSctkEvent::LoopDestroyed => todo!(),
+        }
+    }
+
+    Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SurfaceIdWrapper {
+    LayerSurface(SurfaceId),
+    Window(SurfaceId),
+    Popup(SurfaceId),
+}
 /// Builds a [`UserInterface`] for the provided [`Application`], logging
 /// [`struct@Debug`] information accordingly.
 pub fn build_user_interface<'a, A: Application>(
@@ -294,21 +383,24 @@ pub fn build_user_interface<'a, A: Application>(
     renderer: &mut A::Renderer,
     size: Size,
     debug: &mut Debug,
-    id: SurfaceId,
+    id: SurfaceIdWrapper,
 ) -> UserInterface<'a, A::Message, A::Renderer>
 where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
 {
-    todo!();
     debug.view_started();
-    // let view = application.view(id);
+    let view = match id {
+        SurfaceIdWrapper::LayerSurface(id) => application.view_layer_surface(id),
+        SurfaceIdWrapper::Window(id) => application.view_window(id),
+        SurfaceIdWrapper::Popup(id) => application.view_popup(id),
+    };
     debug.view_finished();
 
     debug.layout_started();
-    // let user_interface = UserInterface::build(view, size, cache, renderer);
+    let user_interface = UserInterface::build(view, size, cache, renderer);
     debug.layout_finished();
 
-    // user_interface
+    user_interface
 }
 
 /// The state of a surface created by the application [`Application`].
@@ -317,7 +409,7 @@ pub struct State<A: Application>
 where
     <A::Renderer as crate::Renderer>::Theme: application::StyleSheet,
 {
-    pub(crate) id: SurfaceId,
+    pub(crate) id: SurfaceIdWrapper,
     title: String,
     scale_factor: f64,
     viewport: Viewport,
@@ -334,7 +426,7 @@ where
     <A::Renderer as crate::Renderer>::Theme: application::StyleSheet,
 {
     /// Creates a new [`State`] for the provided [`Application`]
-    pub fn new(application: &A, id: SurfaceId) -> Self {
+    pub fn new(application: &A, id: SurfaceIdWrapper) -> Self {
         let title = application.title();
         let scale_factor = application.scale_factor();
         let theme = application.theme();
@@ -451,7 +543,7 @@ where
         &mut self,
         application: &A,
         window: &SctkWindow,
-        proxy: &calloop::channel::Sender<A::Message>,
+        proxy: &proxy::Proxy<A::Message>,
     ) {
         self.synchronize(application);
     }
@@ -467,7 +559,7 @@ where
         &mut self,
         application: &A,
         window: &SctkPopup,
-        proxy: &calloop::channel::Sender<A::Message>,
+        proxy: &proxy::Proxy<A::Message>,
     ) {
         self.synchronize(application);
     }
@@ -483,7 +575,7 @@ where
         &mut self,
         application: &A,
         window: &SctkPopup,
-        proxy: &calloop::channel::Sender<A::Message>,
+        proxy: &proxy::Proxy<A::Message>,
     ) {
         self.synchronize(application);
     }
@@ -502,7 +594,7 @@ pub(crate) fn update<A: Application, E: Executor>(
     cache: &mut user_interface::Cache,
     state: &State<A>,
     renderer: &mut A::Renderer,
-    runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
+    runtime: &mut Runtime<E, proxy::Proxy<A::Message>, A::Message>,
     proxy: &mut calloop::channel::Sender<(SurfaceId, A::Message)>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
@@ -547,8 +639,8 @@ fn run_command<A, E>(
     state: &State<A>,
     renderer: &mut A::Renderer,
     command: Command<A::Message>,
-    runtime: &mut Runtime<E, calloop::channel::Sender<A::Message>, A::Message>,
-    proxy: &mut calloop::channel::Sender<A::Message>,
+    runtime: &mut Runtime<E, proxy::Proxy<A::Message>, A::Message>,
+    proxy: &mut proxy::Proxy<A::Message>,
     debug: &mut Debug,
     windows: &mut HashMap<SurfaceId, SctkWindow>,
     layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
@@ -618,7 +710,7 @@ fn run_command<A, E>(
                     match operation.finish() {
                         operation::Outcome::None => {}
                         operation::Outcome::Some(message) => {
-                            proxy.send(message).expect("Send message to event loop");
+                            proxy.send_event(message);
                         }
                         operation::Outcome::Chain(next) => {
                             current_operation = Some(next);
@@ -635,7 +727,6 @@ fn run_command<A, E>(
     }
 }
 
-/// TODO(derezzedex)
 pub fn build_user_interfaces<'a, A>(
     application: &'a A,
     renderer: &mut A::Renderer,
@@ -658,7 +749,7 @@ where
             renderer,
             state.logical_size(),
             debug,
-            id.clone(),
+            state.id,
         );
 
         let _ = interfaces.insert(id, user_interface);

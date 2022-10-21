@@ -25,6 +25,10 @@ impl<Message: 'static> Proxy<Message> {
     pub fn new(raw: calloop::channel::Sender<Message>) -> Self {
         Self { raw }
     }
+    /// send an event
+    pub fn send_event(&self, message: Message) {
+        let _ = self.raw.send(message);
+    }
 }
 
 impl<Message: 'static> Sink<Message> for Proxy<Message> {
