@@ -1,10 +1,30 @@
+use iced_native::command::platform_specific::wayland::layer_surface::IcedLayerSurface;
+use sctk::shell::{layer::{LayerSurfaceBuilder, LayerSurface, Layer}, xdg::window::WindowBuilder};
+
+
+
+#[derive(Debug)]
 pub struct Settings<Flags> {
     /// The data needed to initialize an [`Application`].
     ///
     /// [`Application`]: crate::Application
     pub flags: Flags,
     /// optional keyboard repetition config
-    kbd_repeat: Option<u32>,
+    pub kbd_repeat: Option<u32>,
     /// optional name and size of a custom pointer theme
-    ptr_theme: Option<(String, u32)>,
+    pub ptr_theme: Option<(String, u32)>,
+    /// surface
+    pub surface: InitialSurface
+}
+
+#[derive(Debug)]
+pub enum InitialSurface {
+    LayerSurface(IcedLayerSurface),
+    XdgWindow(WindowBuilder)
+}
+
+impl Default for InitialSurface {
+    fn default() -> Self {
+        Self::LayerSurface(IcedLayerSurface::default())
+    }
 }

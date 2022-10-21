@@ -5,16 +5,15 @@ use crate::{
     event_loop::{
         self,
         control_flow::ControlFlow,
-        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow}, SctkEventLoop,
+        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow}, SctkEventLoop, proxy::{Proxy, self},
     },
     renderer,
     sctk_event::{
         IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent, WindowEventVariant,
     },
-    settings, Command, Debug, Executor, Program, Runtime, Size, Subscription,
+    settings, Command, Debug, Executor, Program, Runtime, Size, Subscription, egl::init_egl,
 };
-use core::task;
-use futures::channel::mpsc;
+use futures::{task, channel::mpsc};
 use iced_native::{
     application::{self, StyleSheet},
     clipboard,
@@ -37,7 +36,7 @@ use sctk::{
 use sctk::{
     reexports::client::{
         protocol::{wl_output, wl_surface},
-        Connection, Proxy, QueueHandle,
+        Connection, QueueHandle,
     },
     seat::keyboard::Modifiers,
 };
@@ -49,6 +48,7 @@ use iced_graphics::{compositor, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use std::mem::ManuallyDrop;
 use iced_native::window::Id as SurfaceId;
+use glow::HasContext;
 
 pub struct IcedSctkState;
 
@@ -173,27 +173,52 @@ where
     E: Executor + 'static,
     C: window::GLCompositor<Renderer = A::Renderer> + 'static,
     <A::Renderer as iced_native::Renderer>::Theme: StyleSheet,
+    A::Flags: Clone
 {
     let mut debug = Debug::new();
     debug.startup_started();
     let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
-    let event_loop = SctkEventLoop::<A::Message>::new().expect("Failed to initialize the event loop");
+    let flags = settings.flags.clone();
+
+    let (event_loop, surface) = SctkEventLoop::<A::Message>::new(settings).expect("Failed to initialize the event loop");
     
-    let runtime = {
-        let proxy = event_loop.proxy();
+    let (runtime, ev_proxy) = {
+        let ev_proxy = event_loop.proxy();
         let executor = E::new().map_err(Error::ExecutorCreationFailed)?;
 
-        Runtime::new(executor, proxy)
+        (Runtime::new(executor, ev_proxy.clone()), ev_proxy)
     };
 
     let (application, init_command) = {
-        let flags = settings.flags;
+        let flags = flags;
 
         runtime.enter(|| A::new(flags))
     };
 
     let windows: HashMap<SurfaceId, SctkWindow> = HashMap::new();
+    let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface> = HashMap::new();
+
+    let (display, context, config, surface) = init_egl(&surface, 1, 1);
+
+    let context = context.make_current(&surface).unwrap();
+
+    let (mut sender, receiver) = mpsc::unbounded::<(iced_native::window::Id, A::Message)>();
+
+    // let mut instance = Box::pin(run_instance::<A, E, C>(
+    //     application,
+    //     compositor,
+    //     renderer,
+    //     runtime,
+    //     ev_proxy,
+    //     debug,
+    //     receiver,
+    //     init_command,
+    //     windows,
+    // ));
+
+    let mut context = task::Context::from_waker(task::noop_waker_ref());
+
 
     Ok(())}
 
@@ -201,8 +226,8 @@ async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
     mut renderer: A::Renderer,
-    mut runtime: Runtime<E, calloop::channel::Sender<(SurfaceId, A::Message)>, A::Message>,
-    mut proxy: calloop::channel::Sender<A::Message>,
+    mut runtime: Runtime<E, proxy::Proxy<A::Message>, A::Message>,
+    mut proxy: proxy::Proxy<A::Message>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
     mut windows: HashMap<ObjectId, SctkWindow>,

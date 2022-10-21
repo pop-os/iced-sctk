@@ -26,7 +26,7 @@ impl<T: Debug> WindowHandler for SctkState<T> {
 
         self.sctk_events.push(SctkEvent::WindowEvent {
             variant: WindowEventVariant::Close,
-            id: window.0.window.wl_surface().id(),
+            id: window.window.wl_surface().id(),
         })
         // TODO popup cleanup
     }
@@ -45,7 +45,7 @@ impl<T: Debug> WindowHandler for SctkState<T> {
         };
         self.sctk_events.push(SctkEvent::WindowEvent {
             variant: WindowEventVariant::Configure(configure),
-            id: window.0.window.wl_surface().id(),
+            id: window.window.wl_surface().id(),
         })
     }
 }
@@ -133,7 +133,7 @@ pub fn handle_window_requests<T: 'static + Debug>(state: &mut SctkState<T>) {
     let mut windows_to_close: Vec<ObjectId> = Vec::new();
 
     // Process the rest of the events.
-    for (window_id, (window_handle, _)) in window_map.iter_mut() {
+    for (window_id, window_handle) in window_map.iter_mut() {
         let mut requests = window_handle.pending_requests.lock().unwrap();
         let requests = requests.drain(..);
         for request in requests {

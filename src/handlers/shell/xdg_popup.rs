@@ -20,8 +20,8 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         self.sctk_events.push(SctkEvent::PopupEvent {
             variant: PopupEventVariant::Configure(config),
             id: popup.wl_surface().id(),
-            toplevel_id: sctk_popup.0.toplevel.id(),
-            parent_id: match &sctk_popup.0.parent {
+            toplevel_id: sctk_popup.toplevel.id(),
+            parent_id: match &sctk_popup.parent {
                 SctkSurface::LayerSurface(s) => s.wl_surface().id(),
                 SctkSurface::Window(s) => s.wl_surface().id(),
                 SctkSurface::Popup(s) => s.wl_surface().id(),
@@ -42,8 +42,8 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         self.sctk_events.push(SctkEvent::PopupEvent {
             variant: PopupEventVariant::Done,
             id: popup.wl_surface().id(),
-            toplevel_id: sctk_popup.0.toplevel.id(),
-            parent_id: match &sctk_popup.0.parent {
+            toplevel_id: sctk_popup.toplevel.id(),
+            parent_id: match &sctk_popup.parent {
                 SctkSurface::LayerSurface(s) => s.wl_surface().id(),
                 SctkSurface::Window(s) => s.wl_surface().id(),
                 SctkSurface::Popup(s) => s.wl_surface().id(),

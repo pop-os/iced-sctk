@@ -18,7 +18,7 @@ use glutin::{
     prelude::{GlDisplay, NotCurrentGlContextSurfaceAccessor},
     surface::WindowSurface,
 };
-use iced_native::keyboard::Modifiers;
+use iced_native::{keyboard::Modifiers, command::platform_specific::wayland::layer_surface::IcedMargin};
 use sctk::{
     compositor::CompositorState,
     event_loop::WaylandSource,
@@ -54,7 +54,7 @@ use sctk::{
     },
     shm::{multi::MultiPool, ShmState},
 };
-use once_cell::sync::OnceCell;
+
 #[derive(Debug, Clone)]
 pub(crate) struct SctkSeat {
     pub(crate) seat: WlSeat,
@@ -88,8 +88,8 @@ pub struct SctkLayerSurface {
     pub(crate) layer: Layer,
     pub(crate) anchor: Anchor,
     pub(crate) keyboard_interactivity: KeyboardInteractivity,
-    pub(crate) margin: u32,
-    pub(crate) exclusive_zone: u32,
+    pub(crate) margin: IcedMargin,
+    pub(crate) exclusive_zone: i32,
     pub(crate) last_configure: Option<LayerSurfaceConfigure>,
 }
 
@@ -116,10 +116,10 @@ pub struct SctkPopup {
 #[derive(Debug)]
 pub struct SctkState<T> {
     // egl
-    pub(crate) context: Option<egl::context::PossiblyCurrentContext>,
-    pub(crate) glow: Option<glow::Context>,
-    pub(crate) display: Option<Display>,
-    pub(crate) config: Option<glutin::api::egl::config::Config>,
+    // pub(crate) context: Option<egl::context::PossiblyCurrentContext>,
+    // pub(crate) glow: Option<glow::Context>,
+    // pub(crate) display: Option<Display>,
+    // pub(crate) config: Option<glutin::api::egl::config::Config>,
     /// the cursor wl_surface
     pub(crate) cursor_surface: Option<wl_surface::WlSurface>,
     /// a memory pool
@@ -136,24 +136,15 @@ pub struct SctkState<T> {
     /// `WindowUpdate` or buffer on the associated with it `WindowHandle`.
     pub(crate) windows: HashMap<
         ObjectId,
-        (
             SctkWindow,
-            egl::surface::Surface<glutin::surface::WindowSurface>,
-        ),
     >,
     pub(crate) layer_surfaces: HashMap<
         ObjectId,
-        (
             SctkLayerSurface,
-            egl::surface::Surface<glutin::surface::WindowSurface>,
-        ),
     >,
     pub(crate) popups: HashMap<
         ObjectId,
-        (
             SctkPopup,
-            egl::surface::Surface<glutin::surface::WindowSurface>,
-        ),
     >,
     pub(crate) kbd_focus: Option<WlSurface>,
 
@@ -198,42 +189,42 @@ pub struct SctkState<T> {
     pub(crate) shm_state: ShmState,
     pub(crate) xdg_shell_state: XdgShellState,
     pub(crate) xdg_window_state: XdgWindowState,
-    pub(crate) layer_state: LayerShell,
+    pub(crate) layer_shell: LayerShell,
 
     pub(crate) connection: Connection,
 }
 
-impl<T> SctkState<T>
-where
-    T: 'static + Debug,
-{
-    pub fn get_surface(
-        &mut self,
-        surface: &wl_surface::WlSurface,
-        width: u32,
-        height: u32,
-    ) -> egl::surface::Surface<glutin::surface::WindowSurface> {
-        if let (Some(display), Some(config)) = (self.display.as_ref(), self.config.as_ref()) {
-            let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
-            window_handle.surface = surface.id().as_ptr() as *mut _;
-            let window_handle = raw_window_handle::RawWindowHandle::Wayland(window_handle);
-            let surface_attrs =
-                glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::default().build(
-                    window_handle,
-                    NonZeroU32::new(width).unwrap(),
-                    NonZeroU32::new(height).unwrap(),
-                );
-            let surface = unsafe { display.create_window_surface(&config, &surface_attrs) }
-                .expect("Failed to create surface");
-            surface
-        } else {
-            let (display, context, config, surface) = init_egl(surface, width, height);
-            let context = context.make_current(&surface).unwrap();
+// impl<T> SctkState<T>
+// where
+//     T: 'static + Debug,
+// {
+//     pub fn get_surface(
+//         &mut self,
+//         surface: &wl_surface::WlSurface,
+//         width: u32,
+//         height: u32,
+//     ) -> egl::surface::Surface<glutin::surface::WindowSurface> {
+//         if let (Some(display), Some(config)) = (self.display.as_ref(), self.config.as_ref()) {
+//             let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
+//             window_handle.surface = surface.id().as_ptr() as *mut _;
+//             let window_handle = raw_window_handle::RawWindowHandle::Wayland(window_handle);
+//             let surface_attrs =
+//                 glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::default().build(
+//                     window_handle,
+//                     NonZeroU32::new(width).unwrap(),
+//                     NonZeroU32::new(height).unwrap(),
+//                 );
+//             let surface = unsafe { display.create_window_surface(&config, &surface_attrs) }
+//                 .expect("Failed to create surface");
+//             surface
+//         } else {
+//             let (display, context, config, surface) = init_egl(surface, width, height);
+//             let context = context.make_current(&surface).unwrap();
 
-            self.display.replace(display);
-            self.context.replace(context);
-            self.config.replace(config);
-            surface
-        }
-    }
-}
+//             self.display.replace(display);
+//             self.context.replace(context);
+//             self.config.replace(config);
+//             surface
+//         }
+//     }
+// }

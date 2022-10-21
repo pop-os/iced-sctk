@@ -24,7 +24,7 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
 
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
             variant: LayerSurfaceEventVariant::Done,
-            id: layer.0.surface.wl_surface().id(),
+            id: layer.surface.wl_surface().id(),
         })
         // TODO popup cleanup
     }
@@ -43,7 +43,7 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
         };
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
             variant: LayerSurfaceEventVariant::Configure(configure),
-            id: layer.0.surface.wl_surface().id(),
+            id: layer.surface.wl_surface().id(),
         })
     }
 }

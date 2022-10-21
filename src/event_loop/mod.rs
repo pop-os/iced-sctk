@@ -16,11 +16,11 @@ use crate::{
     sctk_event::{
         IcedSctkEvent, SctkEvent, StartCause, SurfaceCompositorUpdate, SurfaceUserRequest,
         WindowEventVariant,
-    },
+    }, settings,
 };
 use glutin::display;
 use iced_futures::futures::channel::mpsc;
-use iced_native::keyboard::Modifiers;
+use iced_native::{keyboard::Modifiers, command::platform_specific::wayland::layer_surface::IcedLayerSurface};
 use sctk::{
     compositor::CompositorState,
     event_loop::WaylandSource,
@@ -40,7 +40,7 @@ use sctk::{
                 wl_surface::{self, WlSurface},
                 wl_touch::WlTouch,
             },
-            ConnectError, Connection, DispatchError, QueueHandle,
+            ConnectError, Connection, DispatchError, QueueHandle, Proxy,
         },
     },
     registry::RegistryState,
@@ -59,7 +59,7 @@ use wayland_backend::client::WaylandError;
 
 use self::{
     control_flow::ControlFlow,
-    state::{SctkState, SctkWindow}, proxy::Proxy,
+    state::{SctkState, SctkWindow, SctkLayerSurface},
 };
 
 // impl SctkSurface {
@@ -94,11 +94,11 @@ pub struct SctkEventLoop<T> {
     pub(crate) state: SctkState<T>,
 }
 
-impl<T: Debug> SctkEventLoop<T>
+impl<T> SctkEventLoop<T>
 where
     T: 'static + Debug,
 {
-    pub(crate) fn new() -> Result<Self, ConnectError> {
+    pub(crate) fn new<F: Sized>(settings: settings::Settings<F>) -> Result<(Self, WlSurface), ConnectError> {
         let connection = Connection::connect_to_env()?;
         let display = connection.display();
         let (globals, mut event_queue) = registry_queue_init(&connection).unwrap();
@@ -135,7 +135,7 @@ where
             .register_dispatcher(wayland_dispatcher.clone())
             .unwrap();
 
-        Ok(Self {
+        let mut self_ = Self {
             event_loop,
             wayland_dispatcher,
             state: SctkState {
@@ -149,7 +149,7 @@ where
                 xdg_shell_state: XdgShellState::bind(&globals, &qh)
                     .expect("xdg shell is not available"),
                 xdg_window_state: XdgWindowState::bind(&globals, &qh),
-                layer_state: LayerShell::bind(&globals, &qh).expect("layer shell is not available"),
+                layer_shell: LayerShell::bind(&globals, &qh).expect("layer shell is not available"),
 
                 // data_device_manager_state: DataDeviceManagerState::new(),
                 queue_handle: qh,
@@ -166,10 +166,6 @@ where
                 window_user_requests: HashMap::new(),
                 window_compositor_updates: HashMap::new(),
                 sctk_events: Vec::new(),
-                context: Default::default(),
-                glow: Default::default(),
-                display: Default::default(),
-                config: Default::default(),
                 popup_compositor_updates: Default::default(),
                 layer_surface_compositor_updates: Default::default(),
                 layer_surface_user_requests: Default::default(),
@@ -179,11 +175,35 @@ where
             features: Default::default(),
             event_loop_awakener: ping,
             user_events_sender,
-        })
+        };
+
+        let wl_surface = self_.state.compositor_state.create_surface(&self_.state.queue_handle).expect("failed to create the initial surface");
+        match settings.surface {
+            settings::InitialSurface::LayerSurface(IcedLayerSurface { layer, keyboard_interactivity, anchor, output, namespace, margin, size, exclusive_zone }) => {
+                // TODO output handling before this
+                let layer_surface = LayerSurface::builder().anchor(anchor).keyboard_interactivity(keyboard_interactivity).margin(margin.top, margin.right, margin.bottom, margin.left).size(size).namespace(namespace).exclusive_zone(exclusive_zone).map(&self_.state.queue_handle, &self_.state.layer_shell, wl_surface.clone(), layer).expect("failed to create initial layer surface");
+                self_.state.layer_surfaces.insert(wl_surface.id(), SctkLayerSurface {
+                    surface: layer_surface,
+                    requested_size: None,
+                    current_size: None,
+                    layer,
+                    // builder needs to be refactored such that these fields are accessible
+                    anchor,
+                    keyboard_interactivity,
+                    margin,
+                    exclusive_zone,
+                    last_configure: None,
+                });
+            },
+            settings::InitialSurface::XdgWindow(builder) => {
+                todo!()
+            },
+        };
+        Ok((self_, wl_surface))
     }
 
-    pub fn proxy(&self) -> Proxy<T> {
-        Proxy::new(self.user_events_sender.clone())
+    pub fn proxy(&self) -> proxy::Proxy<T> {
+        proxy::Proxy::new(self.user_events_sender.clone())
     }
 
     pub fn run_return<F>(&mut self, mut callback: F) -> i32
@@ -344,7 +364,7 @@ where
                 if let Some(scale_factor) = window_compositor_update.scale_factor.map(|f| f as f64)
                 {
                     let (physical_size, configure) = {
-                        let (window_handle, _) = self.state.windows.get_mut(window_id).unwrap();
+                        let window_handle = self.state.windows.get_mut(window_id).unwrap();
                         let mut size = window_handle.current_size.as_mut().unwrap();
 
                         // Update the new logical size if it was changed.
@@ -380,7 +400,7 @@ where
 
                 if let Some(configure) = window_compositor_update.configure.take() {
                     let physical_size = {
-                        let (window_handle, _) = self.state.windows.get_mut(window_id).unwrap();
+                        let window_handle = self.state.windows.get_mut(window_id).unwrap();
                         let mut window_size = window_handle.current_size.as_mut().unwrap();
                         let size = configure
                             .new_size

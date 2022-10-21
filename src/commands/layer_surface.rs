@@ -2,7 +2,7 @@
 use iced_native::{
     command::{
         self,
-        platform_specific::{self, wayland},
+        platform_specific::{self, wayland::{self, layer_surface::IcedLayerSurface}},
         Command,
     },
     window,
@@ -18,10 +18,13 @@ pub use window::{Event, Mode};
 
 pub use sctk::shell::layer::{Anchor, KeyboardInteractivity, Layer};
 
+use crate::dpi::LogicalSize;
+
+
 // TODO implement as builder that outputs a batched commands
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_shell_v1:request:get_layer_surface>
 pub fn get_layer_surface<Message>(
-    builder: LayerSurfaceBuilder,
+    builder: IcedLayerSurface,
     layer: Layer,
     o: impl FnOnce(ObjectId) -> Message + 'static,
 ) -> Command<Message> {
@@ -29,7 +32,6 @@ pub fn get_layer_surface<Message>(
         platform_specific::Action::Wayland(wayland::Action::LayerSurface(
             wayland::layer_surface::Action::LayerSurface {
                 builder,
-                layer,
                 o: Box::new(o),
             },
         )),

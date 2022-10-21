@@ -48,7 +48,6 @@ pub fn init_egl(
         .with_context_api(glutin::context::ContextApi::Gles(None))
         .build(Some(window_handle));
 
-    // Create a context, trying OpenGL and then Gles.
     let context = unsafe { display.create_context(&config, &gl_attrs) }
         .or_else(|_| unsafe { display.create_context(&config, &gles_attrs) })
         .expect("Failed to create context");
@@ -63,4 +62,25 @@ pub fn init_egl(
         .expect("Failed to create surface");
 
     (display, context, config, surface)
+}
+
+pub fn get_surface(
+    display: egl::display::Display,
+    config: glutin::api::egl::config::Config,
+    surface: &wl_surface::WlSurface,
+    width: u32,
+    height: u32,
+) -> egl::surface::Surface<glutin::surface::WindowSurface> {
+    let mut window_handle = raw_window_handle::WaylandWindowHandle::empty();
+    window_handle.surface = surface.id().as_ptr() as *mut _;
+    let window_handle = raw_window_handle::RawWindowHandle::Wayland(window_handle);
+    let surface_attrs =
+        glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::default().build(
+            window_handle,
+            NonZeroU32::new(width).unwrap(),
+            NonZeroU32::new(height).unwrap(),
+        );
+    let surface = unsafe { display.create_window_surface(&config, &surface_attrs) }
+        .expect("Failed to create surface");
+    surface
 }
