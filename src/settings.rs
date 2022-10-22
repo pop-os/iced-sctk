@@ -1,7 +1,5 @@
 use iced_native::command::platform_specific::wayland::layer_surface::IcedLayerSurface;
-use sctk::shell::{
-    xdg::window::WindowBuilder,
-};
+use sctk::shell::xdg::window::WindowBuilder;
 
 #[derive(Debug)]
 pub struct Settings<Flags> {

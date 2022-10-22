@@ -13,7 +13,11 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         popup: &sctk::shell::xdg::popup::Popup,
         config: sctk::shell::xdg::popup::PopupConfigure,
     ) {
-        let sctk_popup = match self.popups.get_mut(&popup.wl_surface().id()) {
+        let sctk_popup = match self
+            .popups
+            .iter_mut()
+            .find(|s| s.popup.wl_surface().id() == popup.wl_surface().id())
+        {
             Some(p) => p,
             None => return,
         };
@@ -35,8 +39,12 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         _qh: &sctk::reexports::client::QueueHandle<Self>,
         popup: &sctk::shell::xdg::popup::Popup,
     ) {
-        let sctk_popup = match self.popups.remove(&popup.wl_surface().id()) {
-            Some(p) => p,
+        let sctk_popup = match self
+            .popups
+            .iter()
+            .position(|s| s.popup.wl_surface().id() == popup.wl_surface().id())
+        {
+            Some(p) => self.popups.remove(p),
             None => return,
         };
         self.sctk_events.push(SctkEvent::PopupEvent {

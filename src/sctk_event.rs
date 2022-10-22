@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use crate::dpi::PhysicalSize;
+use iced_native::window::Id as SurfaceId;
 use sctk::{
     output::OutputInfo,
     reexports::client::backend::ObjectId,
@@ -12,11 +14,6 @@ use sctk::{
         layer::LayerSurfaceConfigure,
         xdg::{popup::PopupConfigure, window::WindowConfigure},
     },
-};
-
-use crate::{
-    dpi::{PhysicalSize},
-    event_loop::state::{SctkLayerSurface, SctkPopup, SctkWindow},
 };
 
 #[derive(Debug, Clone)]
@@ -164,7 +161,7 @@ pub enum KeyboardEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum WindowEventVariant {
-    Created(SctkWindow),
+    Created((ObjectId, SurfaceId)),
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:close>
     Close,
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
@@ -180,7 +177,7 @@ pub enum WindowEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum PopupEventVariant {
-    Created(SctkPopup),
+    Created((ObjectId, SurfaceId)),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:popup_done>
     Done,
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
@@ -195,7 +192,7 @@ pub enum PopupEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum LayerSurfaceEventVariant {
-    Created(SctkLayerSurface),
+    Created((ObjectId, SurfaceId)),
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:closed>
     Done,
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:configure>

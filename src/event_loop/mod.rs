@@ -3,67 +3,45 @@ pub mod proxy;
 pub mod state;
 
 use std::{
-    cell::RefCell,
     collections::HashMap,
-    error::Error,
     fmt::Debug,
     mem,
     time::{Duration, Instant},
 };
 
 use crate::{
+    application::Event,
     dpi::LogicalSize,
     sctk_event::{
         IcedSctkEvent, SctkEvent, StartCause, SurfaceCompositorUpdate, SurfaceUserRequest,
         WindowEventVariant,
     },
-    settings, application::Event,
+    settings,
 };
-use glutin::display;
-use iced_futures::futures::channel::mpsc;
-use iced_native::{
-    command::platform_specific::wayland::layer_surface::IcedLayerSurface, keyboard::Modifiers,
-};
+
+use iced_native::command::platform_specific::{self, wayland::layer_surface::IcedLayerSurface};
 use sctk::{
     compositor::CompositorState,
     event_loop::WaylandSource,
     output::OutputState,
     reexports::{
-        calloop::{self, EventLoop, LoopHandle},
+        calloop::{self, EventLoop},
         client::{
-            backend::ObjectId,
-            globals::registry_queue_init,
-            protocol::{
-                wl_data_device::WlDataDevice,
-                wl_display::WlDisplay,
-                wl_keyboard::WlKeyboard,
-                wl_output::WlOutput,
-                wl_pointer::WlPointer,
-                wl_seat::WlSeat,
-                wl_surface::{self, WlSurface},
-                wl_touch::WlTouch,
-            },
-            ConnectError, Connection, DispatchError, Proxy, QueueHandle,
+            backend::ObjectId, globals::registry_queue_init, protocol::wl_surface::WlSurface,
+            ConnectError, Connection, DispatchError, Proxy,
         },
     },
     registry::RegistryState,
-    seat::{keyboard::KeyEvent, SeatState},
+    seat::SeatState,
     shell::{
-        layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerSurface},
-        xdg::{
-            popup::Popup,
-            window::{Window, XdgWindowState},
-            XdgPositioner, XdgShellState, XdgShellSurface,
-        },
+        layer::LayerShell,
+        xdg::{window::XdgWindowState, XdgShellState},
     },
-    shm::{multi::MultiPool, ShmState},
+    shm::ShmState,
 };
 use wayland_backend::client::WaylandError;
 
-use self::{
-    control_flow::ControlFlow,
-    state::{SctkLayerSurface, SctkState, SctkWindow},
-};
+use self::{control_flow::ControlFlow, state::SctkState};
 
 // impl SctkSurface {
 //     pub fn hash(&self) -> u64 {
@@ -101,9 +79,7 @@ impl<T> SctkEventLoop<T>
 where
     T: 'static + Debug,
 {
-    pub(crate) fn new<F: Sized>(
-        settings: &settings::Settings<F>,
-    ) -> Result<Self, ConnectError> {
+    pub(crate) fn new<F: Sized>(settings: &settings::Settings<F>) -> Result<Self, ConnectError> {
         let connection = Connection::connect_to_env()?;
         let display = connection.display();
         let (globals, mut event_queue) = registry_queue_init(&connection).unwrap();
@@ -168,9 +144,9 @@ where
                 multipool: None,
                 outputs: Vec::new(),
                 seats: Vec::new(),
-                windows: HashMap::new(),
-                layer_surfaces: HashMap::new(),
-                popups: HashMap::new(),
+                windows: Vec::new(),
+                layer_surfaces: Vec::new(),
+                popups: Vec::new(),
                 kbd_focus: None,
                 window_user_requests: HashMap::new(),
                 window_compositor_updates: HashMap::new(),
@@ -191,53 +167,11 @@ where
         proxy::Proxy::new(self.user_events_sender.clone())
     }
 
-    pub fn get_layer_surface(&mut self, IcedLayerSurface {
-        id,
-        layer,
-        keyboard_interactivity,
-        anchor,
-        output,
-        namespace,
-        margin,
-        size,
-        exclusive_zone,
-    }: IcedLayerSurface) -> (iced_native::window::Id, WlSurface){
-        let wl_surface = self
-        .state
-        .compositor_state
-        .create_surface(&self.state.queue_handle)
-        .expect("failed to create the initial surface");
-
-        let layer_surface = LayerSurface::builder()
-        .anchor(anchor)
-        .keyboard_interactivity(keyboard_interactivity)
-        .margin(margin.top, margin.right, margin.bottom, margin.left)
-        .size(size)
-        .namespace(namespace)
-        .exclusive_zone(exclusive_zone)
-        .map(
-            &self.state.queue_handle,
-            &self.state.layer_shell,
-            wl_surface.clone(),
-            layer,
-        )
-        .expect("failed to create initial layer surface");
-        self.state.layer_surfaces.insert(
-            wl_surface.id(),
-            SctkLayerSurface {
-                surface: layer_surface,
-                requested_size: None,
-                current_size: None,
-                layer,
-                // builder needs to be refactored such that these fields are accessible
-                anchor,
-                keyboard_interactivity,
-                margin,
-                exclusive_zone,
-                last_configure: None,
-            },
-        );
-        (id, wl_surface)
+    pub fn get_layer_surface(
+        &mut self,
+        layer_surface: IcedLayerSurface,
+    ) -> (iced_native::window::Id, WlSurface) {
+        self.state.get_layer_surface(layer_surface)
     }
 
     pub fn run_return<F>(&mut self, mut callback: F) -> i32
@@ -384,9 +318,25 @@ where
                         &mut control_flow,
                         &mut callback,
                     ),
-                    Event::LayerSurface(_) => todo!(),
+                    Event::LayerSurface(
+                        platform_specific::wayland::layer_surface::Action::LayerSurface {
+                            builder,
+                            ..
+                        },
+                    ) => {
+                        todo!()
+                    }
+                    Event::LayerSurface(
+                        platform_specific::wayland::layer_surface::Action::Size {
+                            id,
+                            width,
+                            height,
+                        },
+                    ) => {
+                        todo!()
+                    }
+                    _ => {}
                 }
-                
             }
 
             // Process 'new' pending updates from compositor.
@@ -402,7 +352,12 @@ where
                 if let Some(scale_factor) = window_compositor_update.scale_factor.map(|f| f as f64)
                 {
                     let (physical_size, configure) = {
-                        let window_handle = self.state.windows.get_mut(window_id).unwrap();
+                        let window_handle = self
+                            .state
+                            .windows
+                            .iter_mut()
+                            .find(|w| w.window.wl_surface().id() == *window_id)
+                            .unwrap();
                         let mut size = window_handle.current_size.as_mut().unwrap();
 
                         // Update the new logical size if it was changed.
@@ -438,7 +393,12 @@ where
 
                 if let Some(configure) = window_compositor_update.configure.take() {
                     let physical_size = {
-                        let window_handle = self.state.windows.get_mut(window_id).unwrap();
+                        let window_handle = self
+                            .state
+                            .windows
+                            .iter_mut()
+                            .find(|w| w.window.wl_surface().id() == *window_id)
+                            .unwrap();
                         let mut window_size = window_handle.current_size.as_mut().unwrap();
                         let size = configure
                             .new_size
@@ -548,7 +508,12 @@ where
                 // Handle refresh of the frame.
                 if window_request.refresh_frame {
                     //TODO
-                    let window_handle = self.state.windows.get_mut(window_id).unwrap();
+                    let window_handle = self
+                        .state
+                        .windows
+                        .iter()
+                        .find(|w| w.window.wl_surface().id() == *window_id)
+                        .unwrap();
                     // window_handle.window.refresh();
 
                     // In general refreshing the frame requires surface commit, those force user

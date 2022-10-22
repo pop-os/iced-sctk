@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0-only
 use sctk::{
-    compositor::{CompositorHandler},
+    compositor::CompositorHandler,
     delegate_compositor,
     reexports::client::{protocol::wl_surface, Connection, Proxy, QueueHandle},
 };
@@ -16,17 +16,29 @@ impl<T: Debug> CompositorHandler for SctkState<T> {
         surface: &wl_surface::WlSurface,
         new_factor: i32,
     ) {
-        if let Some(w) = self.windows.get(&surface.id()) {
+        if let Some(w) = self
+            .windows
+            .iter()
+            .find(|w| w.window.wl_surface().id() == surface.id())
+        {
             if let Some(e) = self.window_compositor_updates.get_mut(&surface.id()) {
                 e.scale_factor = Some(new_factor)
             }
         }
-        if let Some(w) = self.layer_surfaces.get(&surface.id()) {
+        if let Some(w) = self
+            .layer_surfaces
+            .iter()
+            .find(|w| w.surface.wl_surface().id() == surface.id())
+        {
             if let Some(e) = self.layer_surface_compositor_updates.get_mut(&surface.id()) {
                 e.scale_factor = Some(new_factor)
             }
         }
-        if let Some(w) = self.popups.get(&surface.id()) {
+        if let Some(w) = self
+            .popups
+            .iter()
+            .find(|w| w.popup.wl_surface().id() == surface.id())
+        {
             if let Some(e) = self.popup_compositor_updates.get_mut(&surface.id()) {
                 e.scale_factor = Some(new_factor)
             }

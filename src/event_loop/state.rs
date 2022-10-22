@@ -1,37 +1,27 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    num::NonZeroU32,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::{
+    application::Event,
     dpi::LogicalSize,
-    egl::init_egl,
-    handlers::shell::xdg_window::WindowRequest,
-    sctk_event::{IcedSctkEvent, SctkEvent, SurfaceCompositorUpdate, SurfaceUserRequest}, application::Event,
+    sctk_event::{SctkEvent, SurfaceCompositorUpdate, SurfaceUserRequest},
 };
-use futures::channel::mpsc;
-use glutin::{
-    api::egl::{self, config::Config, display::Display},
-    display,
-    prelude::{GlDisplay, NotCurrentGlContextSurfaceAccessor},
-    surface::WindowSurface,
-};
+
 use iced_native::{
-    command::platform_specific::wayland::layer_surface::IcedMargin, keyboard::Modifiers, window::Id,
+    command::platform_specific::{
+        self,
+        wayland::layer_surface::{IcedLayerSurface, IcedMargin},
+    },
+    keyboard::Modifiers,
 };
 use sctk::{
     compositor::CompositorState,
-    event_loop::WaylandSource,
     output::OutputState,
     reexports::{
-        calloop::{self, LoopHandle},
+        calloop::LoopHandle,
         client::{
             backend::ObjectId,
             protocol::{
                 wl_data_device::WlDataDevice,
-                wl_display::WlDisplay,
                 wl_keyboard::WlKeyboard,
                 wl_output::WlOutput,
                 wl_pointer::WlPointer,
@@ -39,7 +29,7 @@ use sctk::{
                 wl_surface::{self, WlSurface},
                 wl_touch::WlTouch,
             },
-            ConnectError, Connection, Proxy, QueueHandle,
+            Connection, QueueHandle,
         },
     },
     registry::RegistryState,
@@ -51,7 +41,7 @@ use sctk::{
         xdg::{
             popup::{Popup, PopupConfigure},
             window::{Window, WindowConfigure, XdgWindowState},
-            XdgPositioner, XdgShellState, XdgShellSurface,
+            XdgShellState, XdgShellSurface,
         },
     },
     shm::{multi::MultiPool, ShmState},
@@ -72,18 +62,20 @@ pub(crate) struct SctkSeat {
 }
 
 #[derive(Debug, Clone)]
-pub struct SctkWindow {
+pub struct SctkWindow<T> {
+    pub(crate) id: iced_native::window::Id,
     pub(crate) window: Window,
     pub(crate) requested_size: Option<LogicalSize<u32>>,
     pub(crate) current_size: Option<LogicalSize<u32>>,
     pub(crate) last_configure: Option<WindowConfigure>,
     /// Requests that SCTK window should perform.
-    pub(crate) pending_requests: Arc<Mutex<Vec<WindowRequest>>>,
+    pub(crate) pending_requests: Vec<platform_specific::wayland::window::Action<T>>,
     xdg_surface: Arc<XdgShellSurface>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SctkLayerSurface {
+pub struct SctkLayerSurface<T> {
+    pub(crate) id: iced_native::window::Id,
     pub(crate) surface: LayerSurface,
     pub(crate) requested_size: Option<LogicalSize<u32>>,
     pub(crate) current_size: Option<LogicalSize<u32>>,
@@ -93,6 +85,7 @@ pub struct SctkLayerSurface {
     pub(crate) margin: IcedMargin,
     pub(crate) exclusive_zone: i32,
     pub(crate) last_configure: Option<LayerSurfaceConfigure>,
+    pub(crate) pending_requests: Vec<platform_specific::wayland::layer_surface::Action<T>>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +96,8 @@ pub enum SctkSurface {
 }
 
 #[derive(Debug, Clone)]
-pub struct SctkPopup {
+pub struct SctkPopup<T> {
+    pub(crate) id: iced_native::window::Id,
     pub(crate) popup: Popup,
     pub(crate) parent: SctkSurface,
     pub(crate) toplevel: WlSurface,
@@ -112,6 +106,7 @@ pub struct SctkPopup {
     pub(crate) last_configure: Option<PopupConfigure>,
     // pub(crate) positioner: XdgPositioner,
     xdg_surface: Arc<XdgShellSurface>,
+    pub(crate) pending_requests: Vec<platform_specific::wayland::popup::Action<T>>,
 }
 
 /// Wrapper to carry sctk state.
@@ -136,9 +131,9 @@ pub struct SctkState<T> {
     /// to be sent to other threads, they live on the event loop's thread
     /// and requests from winit's windows are being forwarded to them either via
     /// `WindowUpdate` or buffer on the associated with it `WindowHandle`.
-    pub(crate) windows: HashMap<ObjectId, SctkWindow>,
-    pub(crate) layer_surfaces: HashMap<ObjectId, SctkLayerSurface>,
-    pub(crate) popups: HashMap<ObjectId, SctkPopup>,
+    pub(crate) windows: Vec<SctkWindow<T>>,
+    pub(crate) layer_surfaces: Vec<SctkLayerSurface<T>>,
+    pub(crate) popups: Vec<SctkPopup<T>>,
     pub(crate) kbd_focus: Option<WlSurface>,
 
     /// Window updates, which are coming from SCTK or the compositor, which require
@@ -187,9 +182,57 @@ pub struct SctkState<T> {
     pub(crate) connection: Connection,
 }
 
-// impl<T> SctkState<T>
-// where
-//     T: 'static + Debug,
-// {
+impl<T> SctkState<T>
+where
+    T: 'static + Debug,
+{
+    pub fn get_layer_surface(
+        &mut self,
+        IcedLayerSurface {
+            id,
+            layer,
+            keyboard_interactivity,
+            anchor,
+            output,
+            namespace,
+            margin,
+            size,
+            exclusive_zone,
+        }: IcedLayerSurface,
+    ) -> (iced_native::window::Id, WlSurface) {
+        let wl_surface = self
+            .compositor_state
+            .create_surface(&self.queue_handle)
+            .expect("failed to create the initial surface");
 
-// }
+        let layer_surface = LayerSurface::builder()
+            .anchor(anchor)
+            .keyboard_interactivity(keyboard_interactivity)
+            .margin(margin.top, margin.right, margin.bottom, margin.left)
+            .size(size)
+            .namespace(namespace)
+            .exclusive_zone(exclusive_zone)
+            .map(
+                &self.queue_handle,
+                &self.layer_shell,
+                wl_surface.clone(),
+                layer,
+            )
+            .expect("failed to create initial layer surface");
+        self.layer_surfaces.push(SctkLayerSurface {
+            id,
+            surface: layer_surface,
+            requested_size: None,
+            current_size: None,
+            layer,
+            // builder needs to be refactored such that these fields are accessible
+            anchor,
+            keyboard_interactivity,
+            margin,
+            exclusive_zone,
+            last_configure: None,
+            pending_requests: Vec::new(),
+        });
+        (id, wl_surface)
+    }
+}

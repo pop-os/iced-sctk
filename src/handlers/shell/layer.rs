@@ -17,8 +17,12 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
         _qh: &sctk::reexports::client::QueueHandle<Self>,
         layer: &sctk::shell::layer::LayerSurface,
     ) {
-        let layer = match self.layer_surfaces.remove(&layer.wl_surface().id()) {
-            Some(w) => w,
+        let layer = match self
+            .layer_surfaces
+            .iter()
+            .position(|s| s.surface.wl_surface().id() == layer.wl_surface().id())
+        {
+            Some(w) => self.layer_surfaces.remove(w),
             None => return,
         };
 
@@ -37,7 +41,11 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
         configure: sctk::shell::layer::LayerSurfaceConfigure,
         _serial: u32,
     ) {
-        let layer = match self.layer_surfaces.get_mut(&layer.wl_surface().id()) {
+        let layer = match self
+            .layer_surfaces
+            .iter_mut()
+            .find(|s| s.surface.wl_surface().id() == layer.wl_surface().id())
+        {
             Some(l) => l,
             None => return,
         };

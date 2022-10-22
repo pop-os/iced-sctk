@@ -1,6 +1,4 @@
 use crate::{
-    commands::popup,
-    conversion,
     dpi::PhysicalPosition,
     egl::init_egl,
     error::{self, Error},
@@ -11,57 +9,24 @@ use crate::{
         state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
         SctkEventLoop,
     },
-    renderer,
-    sctk_event::{
-        IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent, WindowEventVariant,
-    },
-    settings, Command, Debug, Executor, Program, Runtime, Size, Subscription,
+    sctk_event::{IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, WindowEventVariant},
+    settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
 use futures::{channel::mpsc, task, Future, StreamExt};
 use iced_native::{
     application::{self, StyleSheet},
-    clipboard, mouse,
+    clipboard,
+    command::platform_specific,
+    mouse,
     widget::operation,
-    Element, Renderer, command::platform_specific::{self, wayland::layer_surface::IcedLayerSurface},
+    Element, Renderer,
 };
-use sctk::{
-    compositor::{CompositorHandler, CompositorState, Surface},
-    delegate_compositor, delegate_output, delegate_registry, delegate_xdg_shell,
-    delegate_xdg_window,
-    output::{OutputHandler, OutputState},
-    reexports::{calloop, client::Proxy},
-    registry::{ProvidesRegistryState, RegistryState},
-    registry_handlers,
-    shell::xdg::{
-        window::{Window, WindowConfigure, WindowHandler, XdgWindowState},
-        XdgShellState,
-    },
-};
-use sctk::{
-    reexports::client::{
-        protocol::{wl_output, wl_surface},
-        Connection, QueueHandle,
-    },
-    seat::keyboard::Modifiers,
-};
-use std::{
-    collections::HashMap,
-    ffi::{CStr, CString},
-    fmt,
-    hash::Hash,
-    marker::PhantomData,
-    num::NonZeroU32,
-    process::id,
-};
+
+use sctk::{reexports::client::Proxy, seat::keyboard::Modifiers};
+use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData};
 use wayland_backend::client::ObjectId;
 
-use glow::HasContext;
-use glutin::{
-    api::egl::{self, context::PossiblyCurrentContext},
-    config::ConfigSurfaceTypes,
-    prelude::*,
-    surface::WindowSurface,
-};
+use glutin::{api::egl::context::PossiblyCurrentContext, prelude::*, surface::WindowSurface};
 use iced_graphics::{compositor, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
@@ -222,7 +187,7 @@ where
     let mut event_loop =
         SctkEventLoop::<A::Message>::new(&settings).expect("Failed to initialize the event loop");
 
-    let (id, surface) =  match &settings.surface {
+    let (id, surface) = match &settings.surface {
         settings::InitialSurface::LayerSurface(l) => event_loop.get_layer_surface(l.clone()),
         settings::InitialSurface::XdgWindow(_) => todo!(),
     };
@@ -244,9 +209,9 @@ where
         runtime.enter(|| A::new(flags))
     };
 
-    let windows: HashMap<SurfaceId, SctkWindow> = HashMap::new();
-    let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface> = HashMap::new();
-    let popups: HashMap<SurfaceId, SctkPopup> = HashMap::new();
+    let windows: HashMap<SurfaceId, SctkWindow<A::Message>> = HashMap::new();
+    let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>> = HashMap::new();
+    let popups: HashMap<SurfaceId, SctkPopup<A::Message>> = HashMap::new();
 
     let (display, context, config, surface) = init_egl(&surface, 1, 1);
 
@@ -302,10 +267,12 @@ where
             IcedSctkEvent::LoopDestroyed => todo!(),
         };
         if let Some(event) = event {
-            sender.start_send(Event::Application(event)).expect("Send event");
+            sender
+                .start_send(Event::Application(event))
+                .expect("Send event");
 
             let poll = instance.as_mut().poll(&mut context);
-    
+
             *control_flow = match poll {
                 task::Poll::Pending => ControlFlow::Wait,
                 task::Poll::Ready(_) => ControlFlow::ExitWithCode(1),
@@ -324,9 +291,9 @@ async fn run_instance<A, E, C>(
     mut ev_proxy: proxy::Proxy<Event<A::Message>>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<Event<A::Message>>,
-    mut windows: HashMap<SurfaceId, SctkWindow>,
-    mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface>,
-    mut popups: HashMap<SurfaceId, SctkPopup>,
+    mut windows: HashMap<SurfaceId, SctkWindow<A::Message>>,
+    mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
+    mut popups: HashMap<SurfaceId, SctkPopup<A::Message>>,
     mut surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
     mut surface_ids: HashMap<SurfaceId, ObjectId>,
     mut context: PossiblyCurrentContext,
@@ -529,7 +496,7 @@ where
     /// accordingly.
     pub(crate) fn update_window(
         &mut self,
-        window: &SctkWindow,
+        window: &SctkWindow<A::Message>,
         event: &WindowEventVariant,
         _debug: &mut Debug,
     ) {
@@ -540,7 +507,7 @@ where
     /// accordingly.
     pub(crate) fn update_layer_surface(
         &mut self,
-        layer_surface: &SctkLayerSurface,
+        layer_surface: &SctkLayerSurface<A::Message>,
         event: &LayerSurfaceEventVariant,
         _debug: &mut Debug,
     ) {
@@ -551,7 +518,7 @@ where
     /// accordingly.
     pub(crate) fn update_popup(
         &mut self,
-        popup: &SctkPopup,
+        popup: &SctkPopup<A::Message>,
         event: &PopupEventVariant,
         _debug: &mut Debug,
     ) {
@@ -568,7 +535,7 @@ where
     pub(crate) fn synchronize_window(
         &mut self,
         application: &A,
-        window: &SctkWindow,
+        window: &SctkWindow<A::Message>,
         proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);
@@ -584,7 +551,7 @@ where
     pub(crate) fn synchronize_layer_surface(
         &mut self,
         application: &A,
-        window: &SctkPopup,
+        window: &SctkPopup<A::Message>,
         proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);
@@ -600,7 +567,7 @@ where
     pub(crate) fn synchronize_popup(
         &mut self,
         application: &A,
-        window: &SctkPopup,
+        window: &SctkPopup<A::Message>,
         proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);
@@ -624,9 +591,9 @@ pub(crate) fn update<A: Application, E: Executor>(
     proxy: &mut proxy::Proxy<Event<A::Message>>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
-    windows: &mut HashMap<SurfaceId, SctkWindow>,
-    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
-    popups: &mut HashMap<SurfaceId, SctkPopup>,
+    windows: &mut HashMap<SurfaceId, SctkWindow<A::Message>>,
+    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
+    popups: &mut HashMap<SurfaceId, SctkPopup<A::Message>>,
     graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
@@ -668,9 +635,9 @@ fn run_command<A, E>(
     runtime: &mut Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
     proxy: &mut proxy::Proxy<Event<A::Message>>,
     debug: &mut Debug,
-    windows: &mut HashMap<SurfaceId, SctkWindow>,
-    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface>,
-    popups: &mut HashMap<SurfaceId, SctkPopup>,
+    windows: &mut HashMap<SurfaceId, SctkWindow<A::Message>>,
+    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
+    popups: &mut HashMap<SurfaceId, SctkPopup<A::Message>>,
     _graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     A: Application,
@@ -747,14 +714,16 @@ fn run_command<A, E>(
                 current_cache = user_interface.into_cache();
                 *cache = current_cache;
             }
-            command::Action::PlatformSpecific(platform_specific::Action::Wayland(platform_specific::wayland::Action::LayerSurface(layer_surface_action))) => {
+            command::Action::PlatformSpecific(platform_specific::Action::Wayland(
+                platform_specific::wayland::Action::LayerSurface(layer_surface_action),
+            )) => {
                 proxy.send_event(Event::LayerSurface(layer_surface_action));
             }
-            command::Action::PlatformSpecific(platform_specific::Action::Wayland(platform_specific::wayland::Action::Window(window_action))) => {
-                match window_action {
-                    platform_specific::wayland::window::Action::Window { builder, .. } => todo!(),
-                }
-            }
+            command::Action::PlatformSpecific(platform_specific::Action::Wayland(
+                platform_specific::wayland::Action::Window(window_action),
+            )) => match window_action {
+                platform_specific::wayland::window::Action::Window { builder, .. } => todo!(),
+            },
             _ => {}
         }
     }

@@ -14,7 +14,7 @@ pub mod settings;
 pub mod util;
 pub mod window;
 
-pub use application::{Application, run};
+pub use application::{run, Application};
 pub use clipboard::Clipboard;
 pub use error::Error;
 pub use event_loop::proxy::Proxy;
