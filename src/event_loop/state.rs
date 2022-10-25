@@ -125,6 +125,7 @@ pub struct SctkState<T> {
     // all present outputs
     pub(crate) outputs: Vec<WlOutput>,
     // though (for now) only one seat will be active in an iced application at a time, all ought to be tracked
+    // Active seat is the first seat in the list
     pub(crate) seats: Vec<SctkSeat>,
     // Windows / Surfaces
     /// Window list containing all SCTK windows. Since those windows aren't allowed

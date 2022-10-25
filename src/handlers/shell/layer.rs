@@ -49,10 +49,12 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
             Some(l) => l,
             None => return,
         };
+        let id = layer.surface.wl_surface().id();
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
             variant: LayerSurfaceEventVariant::Configure(configure),
-            id: layer.surface.wl_surface().id(),
-        })
+            id: id.clone(),
+        });
+        self.sctk_events.push(SctkEvent::Draw(id));
     }
 }
 

@@ -17,22 +17,26 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         _raw: &[u32],
         _keysyms: &[u32],
     ) {
-        let my_seat = match self
-            .seats
-            .iter_mut()
-            .find(|s| s.kbd.as_ref() == Some(keyboard))
-        {
-            Some(s) => s,
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
             None => return,
         };
 
         my_seat.kbd_focus.replace(surface.clone());
 
-        self.sctk_events.push(SctkEvent::KeyboardEvent {
-            variant: KeyboardEventVariant::Enter(surface.id()),
-            kbd_id: keyboard.id(),
-            seat_id: my_seat.seat.id(),
-        })
+        if is_active {
+            self.sctk_events.push(SctkEvent::KeyboardEvent {
+                variant: KeyboardEventVariant::Enter(surface.id()),
+                kbd_id: keyboard.id(),
+                seat_id: my_seat.seat.id(),
+            })
+        }
     }
 
     fn leave(
@@ -43,12 +47,14 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         surface: &sctk::reexports::client::protocol::wl_surface::WlSurface,
         _serial: u32,
     ) {
-        let my_seat = match self
-            .seats
-            .iter_mut()
-            .find(|s| s.kbd.as_ref() == Some(keyboard))
-        {
-            Some(s) => s,
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
             None => return,
         };
         let seat_id = my_seat.seat.id();
@@ -56,11 +62,13 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         let surface_id = surface.id();
         my_seat.kbd_focus.replace(surface.clone());
 
-        self.sctk_events.push(SctkEvent::KeyboardEvent {
-            variant: KeyboardEventVariant::Leave(surface_id),
-            kbd_id,
-            seat_id,
-        })
+        if is_active {
+            self.sctk_events.push(SctkEvent::KeyboardEvent {
+                variant: KeyboardEventVariant::Enter(surface.id()),
+                kbd_id,
+                seat_id,
+            })
+        }
     }
 
     fn press_key(
@@ -71,23 +79,26 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         _serial: u32,
         event: sctk::seat::keyboard::KeyEvent,
     ) {
-        let my_seat = match self
-            .seats
-            .iter_mut()
-            .find(|s| s.kbd.as_ref() == Some(keyboard))
-        {
-            Some(s) => s,
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
             None => return,
         };
         let seat_id = my_seat.seat.id();
         let kbd_id = keyboard.id();
         my_seat.last_kbd_press.replace(event.clone());
-
-        self.sctk_events.push(SctkEvent::KeyboardEvent {
-            variant: KeyboardEventVariant::Press(event),
-            kbd_id,
-            seat_id,
-        });
+        if is_active {
+            self.sctk_events.push(SctkEvent::KeyboardEvent {
+                variant: KeyboardEventVariant::Press(event),
+                kbd_id,
+                seat_id,
+            });
+        }
     }
 
     fn release_key(
@@ -98,22 +109,26 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         _serial: u32,
         event: sctk::seat::keyboard::KeyEvent,
     ) {
-        let my_seat = match self
-            .seats
-            .iter_mut()
-            .find(|s| s.kbd.as_ref() == Some(keyboard))
-        {
-            Some(s) => s,
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
             None => return,
         };
         let seat_id = my_seat.seat.id();
         let kbd_id = keyboard.id();
 
-        self.sctk_events.push(SctkEvent::KeyboardEvent {
-            variant: KeyboardEventVariant::Press(event),
-            kbd_id,
-            seat_id,
-        });
+        if is_active {
+            self.sctk_events.push(SctkEvent::KeyboardEvent {
+                variant: KeyboardEventVariant::Press(event),
+                kbd_id,
+                seat_id,
+            });
+        }
     }
 
     fn update_modifiers(
@@ -124,22 +139,26 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         _serial: u32,
         modifiers: sctk::seat::keyboard::Modifiers,
     ) {
-        let my_seat = match self
-            .seats
-            .iter_mut()
-            .find(|s| s.kbd.as_ref() == Some(keyboard))
-        {
-            Some(s) => s,
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
             None => return,
         };
         let seat_id = my_seat.seat.id();
         let kbd_id = keyboard.id();
 
-        self.sctk_events.push(SctkEvent::KeyboardEvent {
-            variant: KeyboardEventVariant::Modifiers(modifiers),
-            kbd_id,
-            seat_id,
-        })
+        if is_active {
+            self.sctk_events.push(SctkEvent::KeyboardEvent {
+                variant: KeyboardEventVariant::Modifiers(modifiers),
+                kbd_id,
+                seat_id,
+            })
+        }
     }
 }
 

@@ -13,8 +13,8 @@ use crate::{
     application::Event,
     dpi::LogicalSize,
     sctk_event::{
-        IcedSctkEvent, SctkEvent, StartCause, SurfaceCompositorUpdate, SurfaceUserRequest,
-        WindowEventVariant,
+        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, SeatEventVariant, StartCause,
+        SurfaceCompositorUpdate, SurfaceUserRequest, WindowEventVariant,
     },
     settings,
 };
@@ -187,7 +187,7 @@ where
         );
 
         let mut window_compositor_updates: Vec<(ObjectId, SurfaceCompositorUpdate)> = Vec::new();
-        let mut window_user_requests: Vec<(ObjectId, SurfaceUserRequest)> = Vec::new();
+        let mut surface_user_requests: Vec<(ObjectId, SurfaceUserRequest)> = Vec::new();
 
         let mut popup_compositor_updates: Vec<(ObjectId, SurfaceCompositorUpdate)> = Vec::new();
         let mut popup_user_requests: Vec<(ObjectId, SurfaceUserRequest)> = Vec::new();
@@ -312,12 +312,9 @@ where
             let user_events = self.state.pending_user_events.drain(..).collect::<Vec<_>>();
             for user_event in user_events {
                 match user_event {
-                    Event::Application(user_event) => sticky_exit_callback(
-                        IcedSctkEvent::UserEvent(user_event),
-                        &self.state,
-                        &mut control_flow,
-                        &mut callback,
-                    ),
+                    Event::SctkEvent(event) => {
+                        sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback)
+                    }
                     Event::LayerSurface(
                         platform_specific::wayland::layer_surface::Action::LayerSurface {
                             builder,
@@ -474,10 +471,58 @@ where
             // to create a window in one of those callbacks.
             std::mem::swap(&mut event_sink_back_buffer, &mut self.state.sctk_events);
 
-            // Handle pending window events.
+            // Handle pending sctk events.
+            let mut must_redraw = Vec::new();
+
             for event in event_sink_back_buffer.drain(..) {
-                // let event = event.map_nonuser_event().unwrap();
-                todo!();
+                match event {
+                    SctkEvent::SeatEvent { variant, id } => {} // pretty sure i can ignore these for now and maybe remove them until we want iced to support multiseat...
+                    SctkEvent::PointerEvent {
+                        variant,
+                        ptr_id,
+                        seat_id,
+                    } => todo!(),
+                    SctkEvent::KeyboardEvent {
+                        variant,
+                        kbd_id,
+                        seat_id,
+                    } => todo!(),
+                    SctkEvent::WindowEvent { variant, id } => todo!(),
+                    SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
+                        crate::sctk_event::LayerSurfaceEventVariant::Created(_) => todo!(),
+                        crate::sctk_event::LayerSurfaceEventVariant::Done => todo!(),
+                        crate::sctk_event::LayerSurfaceEventVariant::Configure(configure) => {
+                            sticky_exit_callback(
+                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
+                                    variant: LayerSurfaceEventVariant::Configure(configure),
+                                    id,
+                                }),
+                                &self.state,
+                                &mut control_flow,
+                                &mut callback,
+                            );
+                        }
+                    },
+                    SctkEvent::PopupEvent {
+                        variant,
+                        toplevel_id,
+                        parent_id,
+                        id,
+                    } => todo!(),
+                    SctkEvent::NewOutput { id, info } => {
+                        // TODO forward output events so the user can create custom layer surfaces for them
+                    }
+                    SctkEvent::UpdateOutput { id, info } => {
+                        // TODO forward output events so the user can create custom layer surfaces for them
+                    }
+                    SctkEvent::RemovedOutput(_) => todo!(),
+                    SctkEvent::Draw(id) => must_redraw.push(id),
+                    SctkEvent::ScaleFactorChanged {
+                        factor,
+                        id,
+                        inner_size,
+                    } => todo!(),
+                }
                 // sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback);
             }
 
@@ -495,40 +540,55 @@ where
             // shim::handle_window_requests(self.state);
             // TODO
             // Process 'new' pending updates from compositor.
-            window_user_requests.clear();
-            window_user_requests.extend(
+            surface_user_requests.clear();
+            surface_user_requests.extend(
                 self.state
                     .window_user_requests
                     .iter_mut()
                     .map(|(wid, window_request)| (wid.clone(), mem::take(window_request))),
             );
 
-            // Handle RedrawRequested events.
-            for (window_id, mut window_request) in window_user_requests.iter() {
+            // Handle RedrawRequested requests.
+            for (surface_id, mut surface_request) in surface_user_requests.iter() {
+                if let Some(i) = must_redraw.iter().position(|a_id| a_id == surface_id) {
+                    must_redraw.remove(i);
+                }
                 // Handle refresh of the frame.
-                if window_request.refresh_frame {
+                if surface_request.refresh_frame {
                     //TODO
                     let window_handle = self
                         .state
                         .windows
                         .iter()
-                        .find(|w| w.window.wl_surface().id() == *window_id)
+                        .find(|w| w.window.wl_surface().id() == *surface_id)
                         .unwrap();
                     // window_handle.window.refresh();
 
                     // In general refreshing the frame requires surface commit, those force user
                     // to redraw.
-                    window_request.redraw_requested = true;
+                    surface_request.redraw_requested = true;
                 }
 
                 // Handle redraw request.
-                if window_request.redraw_requested {
+                if surface_request.redraw_requested {
                     sticky_exit_callback(
-                        IcedSctkEvent::RedrawRequested(window_id.clone()),
+                        IcedSctkEvent::RedrawRequested(surface_id.clone()),
                         &self.state,
                         &mut control_flow,
                         &mut callback,
                     );
+                }
+            }
+
+            for id in must_redraw {
+                sticky_exit_callback(
+                    IcedSctkEvent::RedrawRequested(id.clone()),
+                    &self.state,
+                    &mut control_flow,
+                    &mut callback,
+                );
+                if let Some(layer_surface) = self.state.layer_surfaces.iter().find(|l| l.surface.wl_surface().id() == id) {
+                    layer_surface.surface.wl_surface().commit();
                 }
             }
 

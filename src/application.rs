@@ -1,5 +1,5 @@
 use crate::{
-    dpi::PhysicalPosition,
+    dpi::{LogicalSize, PhysicalPosition},
     egl::init_egl,
     error::{self, Error},
     event_loop::{
@@ -9,7 +9,10 @@ use crate::{
         state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
         SctkEventLoop,
     },
-    sctk_event::{IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, WindowEventVariant, StartCause},
+    sctk_event::{
+        IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent, StartCause,
+        WindowEventVariant,
+    },
     settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
 use futures::{channel::mpsc, task, Future, StreamExt};
@@ -23,20 +26,19 @@ use iced_native::{
 };
 
 use sctk::{reexports::client::Proxy, seat::keyboard::Modifiers};
-use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData};
+use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
 use glutin::{api::egl::context::PossiblyCurrentContext, prelude::*, surface::WindowSurface};
-use iced_graphics::{compositor, window, Color, Point, Viewport};
+use iced_graphics::{compositor, window, Color, Point, Viewport, renderer};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
 use std::mem::ManuallyDrop;
 
 #[derive(Debug)]
 pub enum Event<Message> {
-    /// An [`Application`] generated message
-    Application(Message),
-
+    /// A normal sctk event
+    SctkEvent(IcedSctkEvent<Message>),
     /// TODO
     // Create a wrapper variant of `window::Event` type instead
     // (maybe we should also allow users to listen/react to those internal messages?)
@@ -179,7 +181,6 @@ where
 {
     let mut debug = Debug::new();
     debug.startup_started();
-    let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
     let flags = settings.flags.clone();
     let exit_on_close_request = settings.exit_on_close_request;
@@ -193,7 +194,7 @@ where
     };
     let init_id = surface.id();
 
-    let mut surface_ids = HashMap::from([(id, init_id.clone())]);
+    let surface_ids = HashMap::from([(init_id.clone(), id)]);
 
     let id = SurfaceId::new(&init_id);
     let (runtime, ev_proxy) = {
@@ -257,34 +258,17 @@ where
         if let ControlFlow::ExitWithCode(_) = control_flow {
             return;
         }
-        let event = match event {
-            IcedSctkEvent::NewEvents(events) =>  {
-                match events {
-                    StartCause::ResumeTimeReached { start, requested_resume } => todo!(),
-                    StartCause::WaitCancelled { start, requested_resume } => todo!(),
-                    StartCause::Poll => todo!(),
-                    StartCause::Init => todo!(),
-                }
-            },
-            IcedSctkEvent::UserEvent(event) => Some(event),
-            IcedSctkEvent::SctkEvent(_) => todo!(),
-            IcedSctkEvent::MainEventsCleared => todo!(),
-            IcedSctkEvent::RedrawRequested(_) => todo!(),
-            IcedSctkEvent::RedrawEventsCleared => todo!(),
-            IcedSctkEvent::LoopDestroyed => todo!(),
+
+        sender
+            .start_send(Event::SctkEvent(event))
+            .expect("Send event");
+
+        let poll = instance.as_mut().poll(&mut context);
+
+        *control_flow = match poll {
+            task::Poll::Pending => ControlFlow::Wait,
+            task::Poll::Ready(_) => ControlFlow::ExitWithCode(1),
         };
-        if let Some(event) = event {
-            sender
-                .start_send(Event::Application(event))
-                .expect("Send event");
-
-            let poll = instance.as_mut().poll(&mut context);
-
-            *control_flow = match poll {
-                task::Poll::Pending => ControlFlow::Wait,
-                task::Poll::Ready(_) => ControlFlow::ExitWithCode(1),
-            };
-        }
     });
 
     Ok(())
@@ -302,7 +286,7 @@ async fn run_instance<A, E, C>(
     mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
     mut popups: HashMap<SurfaceId, SctkPopup<A::Message>>,
     mut surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
-    mut surface_ids: HashMap<SurfaceId, ObjectId>,
+    mut surface_ids: HashMap<ObjectId, SurfaceId>,
     mut context: PossiblyCurrentContext,
     init_command: Command<A::Message>,
     exit_on_close_request: bool,
@@ -356,13 +340,135 @@ where
     let mut mouse_interaction = mouse::Interaction::default();
     let mut events: Vec<IcedSctkEvent<A::Message>> = Vec::new();
     let mut messages: Vec<A::Message> = Vec::new();
-
     debug.startup_finished();
+
+    let mut current_context_window = id;
 
     while let Some(event) = receiver.next().await {
         match event {
-            Event::Application(_) => todo!(),
             Event::LayerSurface(_) => todo!(),
+            Event::SctkEvent(event) => match event {
+                IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
+                IcedSctkEvent::UserEvent(_) => todo!(),
+                IcedSctkEvent::SctkEvent(event) => match event {
+                    SctkEvent::SeatEvent { variant, id } => todo!(),
+                    SctkEvent::PointerEvent {
+                        variant,
+                        ptr_id,
+                        seat_id,
+                    } => todo!(),
+                    SctkEvent::KeyboardEvent {
+                        variant,
+                        kbd_id,
+                        seat_id,
+                    } => todo!(),
+                    SctkEvent::WindowEvent { variant, id } => todo!(),
+                    SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
+                        LayerSurfaceEventVariant::Created(_) => todo!(),
+                        LayerSurfaceEventVariant::Done => todo!(),
+                        LayerSurfaceEventVariant::Configure(configure) => {
+                            if let Some(window) =
+                                surface_ids.get(&id).and_then(|id| windows.get_mut(id))
+                            {
+                                window.current_size = Some(LogicalSize::new(
+                                    configure.new_size.0,
+                                    configure.new_size.1,
+                                ));
+                            }
+                        }
+                    },
+                    SctkEvent::PopupEvent {
+                        variant,
+                        toplevel_id,
+                        parent_id,
+                        id,
+                    } => todo!(),
+                    SctkEvent::NewOutput { id, info } => todo!(),
+                    SctkEvent::UpdateOutput { id, info } => todo!(),
+                    SctkEvent::RemovedOutput(_) => todo!(),
+                    SctkEvent::Draw(_) => todo!(), // probably should never be forwarded here...
+                    SctkEvent::ScaleFactorChanged {
+                        factor,
+                        id,
+                        inner_size,
+                    } => todo!(),
+                },
+                IcedSctkEvent::MainEventsCleared => {
+                    // TODO do stuff here
+                }
+                IcedSctkEvent::RedrawRequested(id) => {
+                    if let Some((native_id, Some(window), Some(surface), Some(mut user_interface), Some(state))) =
+                        surface_ids.get(&id).map(|id| {
+                            let window = windows.get_mut(id).map(|w| (w, *id));
+                            let surface = surfaces.get_mut(id);
+                            let interface = interfaces.remove(id);
+                            let state = states.get_mut(id);
+                            (*id, window, surface, interface, state)
+                        })
+                    {                        
+                        debug.render_started();
+
+                        if current_context_window != native_id {
+                            if context
+                                .make_current(surface).is_ok() {
+                                    current_context_window = native_id;
+                            } else {
+                                continue;
+                            }
+
+                        }
+
+                        if state.viewport_changed() {
+                            let physical_size = state.physical_size();
+                            let logical_size = state.logical_size();
+
+                            debug.layout_started();
+                            user_interface = user_interface.relayout(logical_size, &mut renderer);
+                            debug.layout_finished();
+
+                            debug.draw_started();
+                            let new_mouse_interaction = user_interface.draw(
+                                &mut renderer,
+                                state.theme(),
+                                &renderer::Style {
+                                    text_color: state.text_color(),
+                                },
+                                state.cursor_position(),
+                            );
+                            debug.draw_finished();
+
+                            // TODO cursor icon handling
+                            // if new_mouse_interaction != mouse_interaction {
+                            //     window.set_cursor_icon(conversion::mouse_interaction(
+                            //         new_mouse_interaction,
+                            //     ));
+
+                            //     mouse_interaction = new_mouse_interaction;
+                            // }
+                            surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
+
+                            compositor.resize_viewport(physical_size);
+
+                            let _ =
+                                interfaces.insert(native_id, user_interface);
+                        }
+
+                        compositor.present(
+                            &mut renderer,
+                            state.viewport(),
+                            state.background_color(),
+                            &debug.overlay(),
+                        );
+                        let _ = surface.swap_buffers(&context);
+
+                        debug.render_finished();
+                    }
+                }
+                IcedSctkEvent::RedrawEventsCleared => {
+                    // TODO
+                },
+                IcedSctkEvent::LoopDestroyed => todo!(),
+            },
         }
     }
 
@@ -628,7 +734,9 @@ pub(crate) fn update<A: Application, E: Executor>(
         );
     }
 
-    let subscription = application.subscription().map(|m| Event::Application(m));
+    let subscription = application
+        .subscription()
+        .map(|m| Event::SctkEvent(IcedSctkEvent::UserEvent(m)));
     runtime.track(subscription);
 }
 
@@ -710,7 +818,7 @@ fn run_command<A, E>(
                     match operation.finish() {
                         operation::Outcome::None => {}
                         operation::Outcome::Some(message) => {
-                            proxy.send_event(Event::Application(message));
+                            proxy.send_event(Event::SctkEvent(IcedSctkEvent::UserEvent(message)));
                         }
                         operation::Outcome::Chain(next) => {
                             current_operation = Some(next);

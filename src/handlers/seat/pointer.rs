@@ -14,21 +14,26 @@ impl<T: Debug> PointerHandler for SctkState<T> {
         pointer: &sctk::reexports::client::protocol::wl_pointer::WlPointer,
         events: &[sctk::seat::pointer::PointerEvent],
     ) {
-        let my_seat = match self
-            .seats
-            .iter_mut()
-            .find(|s| s.ptr.as_ref() == Some(pointer))
-        {
-            Some(s) => s,
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.ptr.as_ref() == Some(pointer) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
             None => return,
         };
 
+        // track events, but only forward for the active seat
         for e in events {
-            self.sctk_events.push(SctkEvent::PointerEvent {
-                variant: e.clone(),
-                ptr_id: pointer.id(),
-                seat_id: my_seat.seat.id(),
-            });
+            if is_active {
+                self.sctk_events.push(SctkEvent::PointerEvent {
+                    variant: e.clone(),
+                    ptr_id: pointer.id(),
+                    seat_id: my_seat.seat.id(),
+                });
+            }
             match e.kind {
                 PointerEventKind::Enter { .. } => {
                     my_seat.ptr_focus.replace(e.surface.clone());

@@ -192,6 +192,7 @@ pub enum PopupEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum LayerSurfaceEventVariant {
+    /// sent after creation of the layer surface
     Created((ObjectId, SurfaceId)),
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:closed>
     Done,
