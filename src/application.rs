@@ -9,7 +9,7 @@ use crate::{
         state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
         SctkEventLoop,
     },
-    sctk_event::{IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, WindowEventVariant},
+    sctk_event::{IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, WindowEventVariant, StartCause},
     settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
 use futures::{channel::mpsc, task, Future, StreamExt};
@@ -258,7 +258,14 @@ where
             return;
         }
         let event = match event {
-            IcedSctkEvent::NewEvents(_) => todo!(),
+            IcedSctkEvent::NewEvents(events) =>  {
+                match events {
+                    StartCause::ResumeTimeReached { start, requested_resume } => todo!(),
+                    StartCause::WaitCancelled { start, requested_resume } => todo!(),
+                    StartCause::Poll => todo!(),
+                    StartCause::Init => todo!(),
+                }
+            },
             IcedSctkEvent::UserEvent(event) => Some(event),
             IcedSctkEvent::SctkEvent(_) => todo!(),
             IcedSctkEvent::MainEventsCleared => todo!(),

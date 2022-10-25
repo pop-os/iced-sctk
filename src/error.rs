@@ -15,10 +15,6 @@ pub enum Error {
     /// The application graphics context could not be created.
     #[error("the application graphics context could not be created")]
     GraphicsCreationFailed(iced_graphics::Error),
-
-    /// The application connection to the wayland server could not be created.
-    #[error("The application connection to the wayland server could not be created.")]
-    ConnectionCreationFailed(ConnectError),
 }
 
 impl From<iced_graphics::Error> for Error {

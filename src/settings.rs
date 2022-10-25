@@ -1,5 +1,4 @@
-use iced_native::command::platform_specific::wayland::layer_surface::IcedLayerSurface;
-use sctk::shell::xdg::window::WindowBuilder;
+use iced_native::{command::platform_specific::wayland::layer_surface::IcedLayerSurface, window};
 
 #[derive(Debug)]
 pub struct Settings<Flags> {
@@ -17,10 +16,10 @@ pub struct Settings<Flags> {
     pub exit_on_close_request: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InitialSurface {
     LayerSurface(IcedLayerSurface),
-    XdgWindow(WindowBuilder),
+    XdgWindow(window::Settings),
 }
 
 impl Default for InitialSurface {
