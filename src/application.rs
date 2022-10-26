@@ -339,6 +339,7 @@ where
             || compositor.fetch_information(),
         );
     }
+    runtime.track(application.subscription().map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e))));
 
     let mut mouse_interaction = mouse::Interaction::default();
     let mut events: Vec<SctkEvent> = Vec::new();
@@ -354,7 +355,9 @@ where
     'main: while let Some(event) = receiver.next().await {
         match event {
             IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
-            IcedSctkEvent::UserEvent(_) => todo!(),
+            IcedSctkEvent::UserEvent(message) => {
+                messages.push(message);
+            },
             IcedSctkEvent::SctkEvent(event) => match event {
                 SctkEvent::SeatEvent { variant, .. } => todo!(),
                 SctkEvent::PointerEvent { variant, .. } => {
@@ -473,6 +476,9 @@ where
                     let native_events: Vec<_> = filtered.into_iter().filter_map(|e| {
                         e.to_native()
                     }).collect();
+
+                    dbg!(&interfaces.keys());
+
                     let (interface_state, statuses) = {
                     let user_interface = interfaces.get_mut(&id).unwrap();
                         user_interface.update(
@@ -488,6 +494,7 @@ where
                     {
                         runtime.broadcast(event);
                     }
+                    dbg!(interface_state);
 
 
                     if !messages.is_empty()
@@ -558,6 +565,7 @@ where
                         if context.make_current(egl_surface).is_ok() {
                             current_context_window = native_id;
                         } else {
+                            interfaces.insert(native_id, user_interface);
                             continue;
                         }
                     }
@@ -591,6 +599,8 @@ where
                         compositor.resize_viewport(physical_size);
 
                         let _ = interfaces.insert(native_id, user_interface);
+                    } else {
+                        interfaces.insert(native_id, user_interface);
                     }
 
                     compositor.present(
