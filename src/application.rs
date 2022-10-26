@@ -229,7 +229,7 @@ where
             gl_context.get_proc_address(name.as_c_str())
         })?
     };
-    let (mut sender, receiver) = mpsc::unbounded::<Event<A::Message>>();
+    let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
 
     let mut instance = Box::pin(run_instance::<A, E, C>(
         application,
@@ -262,7 +262,7 @@ where
         }
 
         sender
-            .start_send(Event::SctkEvent(event))
+            .start_send(event)
             .expect("Send event");
 
         let poll = instance.as_mut().poll(&mut context);
@@ -283,7 +283,7 @@ async fn run_instance<A, E, C>(
     mut runtime: Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
     mut ev_proxy: proxy::Proxy<Event<A::Message>>,
     mut debug: Debug,
-    mut receiver: mpsc::UnboundedReceiver<Event<A::Message>>,
+    mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
     mut windows: HashMap<SurfaceId, SctkWindow<A::Message>>,
     mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
     mut popups: HashMap<SurfaceId, SctkPopup<A::Message>>,
@@ -350,142 +350,136 @@ where
 
     while let Some(event) = receiver.next().await {
         match event {
-            // TODO Ashley: make this rx just receive IcedSctkEvent instead of Event
-            // it doesn't need the extra events, which are meant to be handled by sctk
-            Event::LayerSurface(_) => unimplemented!(),
-            Event::SetCursor(_) => unimplemented!(),
-            Event::SctkEvent(event) => match event {
-                IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
-                IcedSctkEvent::UserEvent(_) => todo!(),
-                IcedSctkEvent::SctkEvent(event) => match event {
-                    SctkEvent::SeatEvent { variant, .. } => todo!(),
-                    SctkEvent::PointerEvent {
-                        variant,
-                        ..
-                    } => {
-                        let (state, native_id) = match surface_ids.get(&variant.surface.id()).and_then(|id| states.get_mut(id).map(|state| (state, id))) {
-                            Some(s) => s,
-                            None => continue,
-                        };
-                        match variant.kind {
-                        PointerEventKind::Enter { serial } => {
-                            state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32));
-                        },
-                        PointerEventKind::Leave { serial } => {
-                            state.set_cursor_position(Point::new(-1.0, -1.0));
-                        },
-                        PointerEventKind::Motion { time } => {
-                            state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32))
-                        },
-                        PointerEventKind::Press { time, button, serial } => todo!(),
-                        PointerEventKind::Release { time, button, serial } => todo!(),
-                        PointerEventKind::Axis { time, horizontal, vertical, source } => todo!(),
-                    }},
-                    SctkEvent::KeyboardEvent {
-                        variant,
-                        kbd_id,
-                        seat_id,
-                    } => todo!(),
-                    SctkEvent::WindowEvent { variant, id } => todo!(),
-                    SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
-                        LayerSurfaceEventVariant::Created(_) => todo!(),
-                        LayerSurfaceEventVariant::Done => todo!(),
-                        LayerSurfaceEventVariant::Configure(configure) => {
-                            if let Some(size) =
-                                surface_ids.get(&id).and_then(|id| surface_sizes.get_mut(id))
-                            {
-                                *size = (
-                                    configure.new_size.0,
-                                    configure.new_size.1,
-                                );
-                            }
-                        }
+            IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
+            IcedSctkEvent::UserEvent(_) => todo!(),
+            IcedSctkEvent::SctkEvent(event) => match event {
+                SctkEvent::SeatEvent { variant, .. } => todo!(),
+                SctkEvent::PointerEvent {
+                    variant,
+                    ..
+                } => {
+                    let (state, native_id) = match surface_ids.get(&variant.surface.id()).and_then(|id| states.get_mut(id).map(|state| (state, id))) {
+                        Some(s) => s,
+                        None => continue,
+                    };
+                    match variant.kind {
+                    PointerEventKind::Enter { serial } => {
+                        state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32));
                     },
-                    SctkEvent::PopupEvent {
-                        variant,
-                        toplevel_id,
-                        parent_id,
-                        id,
-                    } => todo!(),
-                    SctkEvent::NewOutput { id, info } => todo!(),
-                    SctkEvent::UpdateOutput { id, info } => todo!(),
-                    SctkEvent::RemovedOutput(_) => todo!(),
-                    SctkEvent::Draw(_) => todo!(), // probably should never be forwarded here...
-                    SctkEvent::ScaleFactorChanged {
-                        factor,
-                        id,
-                        inner_size,
-                    } => todo!(),
-                },
-                IcedSctkEvent::MainEventsCleared => {
-                    // TODO do stuff here
-                }
-                IcedSctkEvent::RedrawRequested(id) => {
-                    if let Some((native_id, Some(size), Some(egl_surface), Some(mut user_interface), Some(state))) =
-                        surface_ids.get(&id).map(|id| {
-                            let window = surface_sizes.get_mut(id);
-                            let surface = surfaces.get_mut(id);
-                            let interface = interfaces.remove(id);
-                            let state = states.get_mut(id);
-                            (*id, window, surface, interface, state)
-                        })
-                    {                        
-                        debug.render_started();
-
-                        if current_context_window != native_id {
-                            if context
-                                .make_current(egl_surface).is_ok() {
-                                    current_context_window = native_id;
-                            } else {
-                                continue;
-                            }
-
-                        }
-
-                        if state.viewport_changed() {
-                            let physical_size = state.physical_size();
-                            let logical_size = state.logical_size();
-
-                            debug.layout_started();
-                            user_interface = user_interface.relayout(logical_size, &mut renderer);
-                            debug.layout_finished();
-
-                            debug.draw_started();
-                            let new_mouse_interaction = user_interface.draw(
-                                &mut renderer,
-                                state.theme(),
-                                &renderer::Style {
-                                    text_color: state.text_color(),
-                                },
-                                state.cursor_position(),
+                    PointerEventKind::Leave { serial } => {
+                        state.set_cursor_position(Point::new(-1.0, -1.0));
+                    },
+                    PointerEventKind::Motion { time } => {
+                        state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32))
+                    },
+                    PointerEventKind::Press { time, button, serial } => todo!(),
+                    PointerEventKind::Release { time, button, serial } => todo!(),
+                    PointerEventKind::Axis { time, horizontal, vertical, source } => todo!(),
+                }},
+                SctkEvent::KeyboardEvent {
+                    variant,
+                    kbd_id,
+                    seat_id,
+                } => todo!(),
+                SctkEvent::WindowEvent { variant, id } => todo!(),
+                SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
+                    LayerSurfaceEventVariant::Created(_) => todo!(),
+                    LayerSurfaceEventVariant::Done => todo!(),
+                    LayerSurfaceEventVariant::Configure(configure) => {
+                        if let Some(size) =
+                            surface_ids.get(&id).and_then(|id| surface_sizes.get_mut(id))
+                        {
+                            *size = (
+                                configure.new_size.0,
+                                configure.new_size.1,
                             );
-                            debug.draw_finished();
-                            ev_proxy.send_event(Event::SetCursor(new_mouse_interaction));
+                        }
+                    }
+                },
+                SctkEvent::PopupEvent {
+                    variant,
+                    toplevel_id,
+                    parent_id,
+                    id,
+                } => todo!(),
+                SctkEvent::NewOutput { id, info } => todo!(),
+                SctkEvent::UpdateOutput { id, info } => todo!(),
+                SctkEvent::RemovedOutput(_) => todo!(),
+                SctkEvent::Draw(_) => todo!(), // probably should never be forwarded here...
+                SctkEvent::ScaleFactorChanged {
+                    factor,
+                    id,
+                    inner_size,
+                } => todo!(),
+            },
+            IcedSctkEvent::MainEventsCleared => {
+                // TODO do stuff here
+            }
+            IcedSctkEvent::RedrawRequested(id) => {
+                if let Some((native_id, Some(size), Some(egl_surface), Some(mut user_interface), Some(state))) =
+                    surface_ids.get(&id).map(|id| {
+                        let window = surface_sizes.get_mut(id);
+                        let surface = surfaces.get_mut(id);
+                        let interface = interfaces.remove(id);
+                        let state = states.get_mut(id);
+                        (*id, window, surface, interface, state)
+                    })
+                {                        
+                    debug.render_started();
 
-                            egl_surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
-
-                            compositor.resize_viewport(physical_size);
-
-                            let _ =
-                                interfaces.insert(native_id, user_interface);
+                    if current_context_window != native_id {
+                        if context
+                            .make_current(egl_surface).is_ok() {
+                                current_context_window = native_id;
+                        } else {
+                            continue;
                         }
 
-                        compositor.present(
-                            &mut renderer,
-                            state.viewport(),
-                            state.background_color(),
-                            &debug.overlay(),
-                        );
-                        let _ = egl_surface.swap_buffers(&context);
-
-                        debug.render_finished();
                     }
+
+                    if state.viewport_changed() {
+                        let physical_size = state.physical_size();
+                        let logical_size = state.logical_size();
+
+                        debug.layout_started();
+                        user_interface = user_interface.relayout(logical_size, &mut renderer);
+                        debug.layout_finished();
+
+                        debug.draw_started();
+                        let new_mouse_interaction = user_interface.draw(
+                            &mut renderer,
+                            state.theme(),
+                            &renderer::Style {
+                                text_color: state.text_color(),
+                            },
+                            state.cursor_position(),
+                        );
+                        debug.draw_finished();
+                        ev_proxy.send_event(Event::SetCursor(new_mouse_interaction));
+
+                        egl_surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
+
+                        compositor.resize_viewport(physical_size);
+
+                        let _ =
+                            interfaces.insert(native_id, user_interface);
+                    }
+
+                    compositor.present(
+                        &mut renderer,
+                        state.viewport(),
+                        state.background_color(),
+                        &debug.overlay(),
+                    );
+                    let _ = egl_surface.swap_buffers(&context);
+
+                    debug.render_finished();
                 }
-                IcedSctkEvent::RedrawEventsCleared => {
-                    // TODO
-                },
-                IcedSctkEvent::LoopDestroyed => todo!(),
+            }
+            IcedSctkEvent::RedrawEventsCleared => {
+                // TODO
             },
+            IcedSctkEvent::LoopDestroyed => todo!(),
         }
     }
 
