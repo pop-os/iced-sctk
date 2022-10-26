@@ -11,16 +11,16 @@ use crate::{
     },
     sctk_event::{
         IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent, StartCause,
-        WindowEventVariant,
+        WindowEventVariant, KeyboardEventVariant,
     },
     settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
-use futures::{channel::mpsc, task, Future, StreamExt};
+use futures::{channel::mpsc, task, Future, StreamExt, FutureExt};
 use iced_native::{
     application::{self, StyleSheet},
-    clipboard,
+    clipboard::{self, Null},
     command::platform_specific,
-    mouse::{self, Interaction},
+    mouse::{self, Interaction, ScrollDelta},
     widget::operation,
     Element, Renderer,
 };
@@ -222,7 +222,7 @@ where
     let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>> = HashMap::new();
     let popups: HashMap<SurfaceId, SctkPopup<A::Message>> = HashMap::new();
 
-    let (display, context, config, surface) = init_egl(&surface, 100, 100);
+    let (_display, context, _config, surface) = init_egl(&surface, 100, 100);
 
     let gl_context = context.make_current(&surface).unwrap();
     let mut surfaces = HashMap::new();
@@ -336,15 +336,12 @@ where
             &mut runtime,
             &mut ev_proxy,
             &mut debug,
-            &mut windows,
-            &mut layer_surfaces,
-            &mut popups,
             || compositor.fetch_information(),
         );
     }
 
     let mut mouse_interaction = mouse::Interaction::default();
-    let mut events: Vec<IcedSctkEvent<A::Message>> = Vec::new();
+    let mut events: Vec<SctkEvent> = Vec::new();
     let mut messages: Vec<A::Message> = Vec::new();
     debug.startup_finished();
 
@@ -352,7 +349,9 @@ where
 
     let mut surface_sizes = HashMap::from([(id, (100, 100))]);
 
-    while let Some(event) = receiver.next().await {
+    let kbd_surface_id: Option<ObjectId> = None;
+
+    'main: while let Some(event) = receiver.next().await {
         match event {
             IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
             IcedSctkEvent::UserEvent(_) => todo!(),
@@ -422,10 +421,11 @@ where
                     parent_id,
                     id,
                 } => todo!(),
+                // TODO forward these events to an application which requests them?
                 SctkEvent::NewOutput { id, info } => todo!(),
                 SctkEvent::UpdateOutput { id, info } => todo!(),
                 SctkEvent::RemovedOutput(_) => todo!(),
-                SctkEvent::Draw(_) => todo!(), // probably should never be forwarded here...
+                SctkEvent::Draw(_) => unimplemented!(), // probably should never be forwarded here...
                 SctkEvent::ScaleFactorChanged {
                     factor,
                     id,
@@ -433,7 +433,109 @@ where
                 } => todo!(),
             },
             IcedSctkEvent::MainEventsCleared => {
-                // TODO do stuff here
+                println!("Main events cleared");
+                for (object_id, native_id) in &surface_ids {
+                    println!("updating {:?}", native_id);
+                    // returns (remove, copy)
+                    let filter_events = |e: &SctkEvent| {
+                        match e {
+                            SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::PointerEvent { variant, .. } => (&variant.surface.id() == object_id, false),
+                            SctkEvent::KeyboardEvent { .. } => (kbd_surface_id.as_ref() == Some(&object_id), false),
+                            SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::NewOutput {..} | SctkEvent::UpdateOutput { .. } | SctkEvent::RemovedOutput(_) => (false, true),
+                            SctkEvent::Draw(_) => unimplemented!(),
+                            SctkEvent::ScaleFactorChanged { id, .. } => (id == object_id, false),
+                        }
+                    };
+                    let mut filtered = Vec::with_capacity(events.len());
+                    let mut i = 0;
+
+                    while i < events.len() {
+                        let should_filter = filter_events(&mut events[i]);
+                        if should_filter.0 {
+                            filtered.push(events.remove(i));
+                            // your code here
+                        } else if should_filter.1 {
+                            filtered.push(events[i].clone())
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    let cursor_position =
+                        states.get(&id).unwrap().cursor_position();
+                    if filtered.is_empty() && messages.is_empty() {
+                        continue;
+                    }
+                    debug.event_processing_started();
+                    let native_events: Vec<_> = filtered.into_iter().filter_map(|e| {
+                        e.to_native()
+                    }).collect();
+                    let (interface_state, statuses) = {
+                    let user_interface = interfaces.get_mut(&id).unwrap();
+                        user_interface.update(
+                            native_events.as_slice(), // TODO Ashley: pass filtered events & add platform specific events to iced_native
+                            cursor_position,
+                            &mut renderer,
+                            &mut Null,
+                            &mut messages,
+                        )
+                    };
+                    debug.event_processing_finished();
+                    for event in native_events.into_iter().zip(statuses.into_iter())
+                    {
+                        runtime.broadcast(event);
+                    }
+
+
+                    if !messages.is_empty()
+                        || matches!(
+                            interface_state,
+                            user_interface::State::Outdated
+                        )
+                    {
+                        let state = &mut states.get_mut(&id).unwrap();
+                        let pure_states: HashMap<_, _> =
+                            ManuallyDrop::into_inner(interfaces)
+                                .drain()
+                                .map(|(id, interface)| {
+                                    (id, interface.into_cache())
+                                })
+                                .collect();
+
+                        // Update application
+                        update(
+                            &mut application,
+                            &mut cache,
+                            state,
+                            &mut renderer,
+                            &mut runtime,
+                            &mut ev_proxy,
+                            &mut debug,
+                            &mut messages,
+                            || compositor.fetch_information(),
+                        );
+
+                        // Update window
+                        state.synchronize(&application);
+
+                        let should_exit = application.should_exit();
+
+                        interfaces = ManuallyDrop::new(build_user_interfaces(
+                            &application,
+                            &mut renderer,
+                            &mut debug,
+                            &states,
+                            pure_states,
+                        ));
+
+                        if should_exit {
+                            break 'main;
+                        }
+                    }
+                }
             }
             IcedSctkEvent::RedrawRequested(id) => {
                 if let Some((
@@ -449,6 +551,7 @@ where
                     let state = states.get_mut(id);
                     (*id, window, surface, interface, state)
                 }) {
+                    println!("Rredrawing: {:?}", native_id);
                     debug.render_started();
 
                     if current_context_window != native_id {
@@ -744,9 +847,6 @@ pub(crate) fn update<A: Application, E: Executor>(
     proxy: &mut proxy::Proxy<Event<A::Message>>,
     debug: &mut Debug,
     messages: &mut Vec<A::Message>,
-    windows: &mut HashMap<SurfaceId, SctkWindow<A::Message>>,
-    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
-    popups: &mut HashMap<SurfaceId, SctkPopup<A::Message>>,
     graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
@@ -767,9 +867,6 @@ pub(crate) fn update<A: Application, E: Executor>(
             runtime,
             proxy,
             debug,
-            windows,
-            layer_surfaces,
-            popups,
             graphics_info,
         );
     }
@@ -790,9 +887,6 @@ fn run_command<A, E>(
     runtime: &mut Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
     proxy: &mut proxy::Proxy<Event<A::Message>>,
     debug: &mut Debug,
-    windows: &mut HashMap<SurfaceId, SctkWindow<A::Message>>,
-    layer_surfaces: &mut HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
-    popups: &mut HashMap<SurfaceId, SctkPopup<A::Message>>,
     _graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
     A: Application,
@@ -807,7 +901,7 @@ fn run_command<A, E>(
     for action in command.actions() {
         match action {
             command::Action::Future(future) => {
-                // runtime.spawn(Box::pin(future.map(Event::Application)));
+                runtime.spawn(Box::pin(future.map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e)))));
             }
             command::Action::Clipboard(action) => match action {
                 clipboard::Action::Read(tag) => {
