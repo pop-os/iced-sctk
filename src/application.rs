@@ -20,12 +20,12 @@ use iced_native::{
     application::{self, StyleSheet},
     clipboard,
     command::platform_specific,
-    mouse,
+    mouse::{self, Interaction},
     widget::operation,
     Element, Renderer,
 };
 
-use sctk::{reexports::client::Proxy, seat::keyboard::Modifiers};
+use sctk::{reexports::client::Proxy, seat::{keyboard::Modifiers, pointer::{PointerEvent, PointerEventKind}}};
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
@@ -43,6 +43,9 @@ pub enum Event<Message> {
     // Create a wrapper variant of `window::Event` type instead
     // (maybe we should also allow users to listen/react to those internal messages?)
     LayerSurface(platform_specific::wayland::layer_surface::Action<Message>),
+
+    /// request sctk to set the cursor of the active pointer
+    SetCursor(Interaction),
 }
 
 pub struct IcedSctkState;
@@ -344,19 +347,40 @@ where
     let mut current_context_window = id;
 
     let mut surface_sizes = HashMap::from([(id, (100, 100))]);
+
     while let Some(event) = receiver.next().await {
         match event {
-            Event::LayerSurface(_) => todo!(),
+            // TODO Ashley: make this rx just receive IcedSctkEvent instead of Event
+            // it doesn't need the extra events, which are meant to be handled by sctk
+            Event::LayerSurface(_) => unimplemented!(),
+            Event::SetCursor(_) => unimplemented!(),
             Event::SctkEvent(event) => match event {
                 IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
                 IcedSctkEvent::UserEvent(_) => todo!(),
                 IcedSctkEvent::SctkEvent(event) => match event {
-                    SctkEvent::SeatEvent { variant, id } => todo!(),
+                    SctkEvent::SeatEvent { variant, .. } => todo!(),
                     SctkEvent::PointerEvent {
                         variant,
-                        ptr_id,
-                        seat_id,
-                    } => todo!(),
+                        ..
+                    } => {
+                        let (state, native_id) = match surface_ids.get(&variant.surface.id()).and_then(|id| states.get_mut(id).map(|state| (state, id))) {
+                            Some(s) => s,
+                            None => continue,
+                        };
+                        match variant.kind {
+                        PointerEventKind::Enter { serial } => {
+                            state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32));
+                        },
+                        PointerEventKind::Leave { serial } => {
+                            state.set_cursor_position(Point::new(-1.0, -1.0));
+                        },
+                        PointerEventKind::Motion { time } => {
+                            state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32))
+                        },
+                        PointerEventKind::Press { time, button, serial } => todo!(),
+                        PointerEventKind::Release { time, button, serial } => todo!(),
+                        PointerEventKind::Axis { time, horizontal, vertical, source } => todo!(),
+                    }},
                     SctkEvent::KeyboardEvent {
                         variant,
                         kbd_id,
@@ -436,16 +460,8 @@ where
                                 state.cursor_position(),
                             );
                             debug.draw_finished();
+                            ev_proxy.send_event(Event::SetCursor(new_mouse_interaction));
 
-                            // TODO cursor icon handling
-                            // if new_mouse_interaction != mouse_interaction {
-                            //     window.set_cursor_icon(conversion::mouse_interaction(
-                            //         new_mouse_interaction,
-                            //     ));
-
-                            //     mouse_interaction = new_mouse_interaction;
-                            // }
-                            dbg!(physical_size);
                             egl_surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
 
                             compositor.resize_viewport(physical_size);
@@ -521,7 +537,7 @@ where
     scale_factor: f64,
     viewport: Viewport,
     viewport_changed: bool,
-    cursor_position: PhysicalPosition<f64>,
+    cursor_position: Point,
     modifiers: Modifiers,
     theme: <A::Renderer as crate::Renderer>::Theme,
     appearance: application::Appearance,
@@ -548,7 +564,7 @@ where
             viewport,
             viewport_changed: false,
             // TODO: Encode cursor availability in the type-system
-            cursor_position: PhysicalPosition::new(-1.0, -1.0),
+            cursor_position: Point::new(-1.0, -1.0),
             modifiers: Modifiers::default(),
             theme,
             appearance,
@@ -583,7 +599,7 @@ where
 
     /// Returns the current cursor position of the [`State`].
     pub fn cursor_position(&self) -> Point {
-        todo!()
+        self.cursor_position
     }
 
     /// Returns the current keyboard modifiers of the [`State`].
@@ -604,6 +620,10 @@ where
     /// Returns the current text [`Color`] of the [`State`].
     pub fn text_color(&self) -> Color {
         self.appearance.text_color
+    }
+
+    pub fn set_cursor_position(&mut self, p: Point) {
+        self.cursor_position = p;
     }
 
     /// Processes the provided window event and updates the [`State`]

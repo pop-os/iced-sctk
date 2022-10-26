@@ -307,34 +307,7 @@ where
                 }
             }
 
-            // Handle pending user events. We don't need back buffer, since we can't dispatch
-            // user events indirectly via callback to the user.
-            let user_events = self.state.pending_user_events.drain(..).collect::<Vec<_>>();
-            for user_event in user_events {
-                match user_event {
-                    Event::SctkEvent(event) => {
-                        sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback)
-                    }
-                    Event::LayerSurface(
-                        platform_specific::wayland::layer_surface::Action::LayerSurface {
-                            builder,
-                            ..
-                        },
-                    ) => {
-                        todo!()
-                    }
-                    Event::LayerSurface(
-                        platform_specific::wayland::layer_surface::Action::Size {
-                            id,
-                            width,
-                            height,
-                        },
-                    ) => {
-                        todo!()
-                    }
-                    _ => {}
-                }
-            }
+            self.handle_pending_user_events(&mut control_flow, &mut callback);
 
             // Process 'new' pending updates from compositor.
             window_compositor_updates.clear();
@@ -481,12 +454,21 @@ where
                         variant,
                         ptr_id,
                         seat_id,
-                    } => todo!(),
+                    } => {
+                        sticky_exit_callback(
+                            IcedSctkEvent::SctkEvent(SctkEvent::PointerEvent { variant, ptr_id, seat_id }),
+                            &self.state,
+                            &mut control_flow,
+                            &mut callback,
+                        );
+                    },
                     SctkEvent::KeyboardEvent {
                         variant,
                         kbd_id,
                         seat_id,
-                    } => todo!(),
+                    } => {
+                        
+                    },
                     SctkEvent::WindowEvent { variant, id } => todo!(),
                     SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
                         crate::sctk_event::LayerSurfaceEventVariant::Created(_) => todo!(),
@@ -604,7 +586,43 @@ where
         callback(IcedSctkEvent::LoopDestroyed, &self.state, &mut control_flow);
         exit_code
     }
+
+    fn handle_pending_user_events<F: FnMut(IcedSctkEvent<T>, &SctkState<T>, &mut ControlFlow)>(&mut self, control_flow: &mut ControlFlow, callback: &mut F) {
+            // Handle pending user events one more time, just in case anything new has been requested in response to the sctk events
+            // user events indirectly via callback to the user.
+            let user_events = self.state.pending_user_events.drain(..).collect::<Vec<_>>();
+            for user_event in user_events {
+                match user_event {
+                    Event::SctkEvent(event) => {
+                        sticky_exit_callback(event, &self.state, control_flow, callback)
+                    }
+                    Event::LayerSurface(
+                        platform_specific::wayland::layer_surface::Action::LayerSurface {
+                            builder,
+                            ..
+                        },
+                    ) => {
+                        todo!()
+                    }
+                    Event::LayerSurface(
+                        platform_specific::wayland::layer_surface::Action::Size {
+                            id,
+                            width,
+                            height,
+                        },
+                    ) => {
+                        todo!()
+                    }
+                    Event::SetCursor(_) => {
+                        // TODO set cursor after cursor theming PR is merged
+                        // https://github.com/Smithay/client-toolkit/pull/306
+                    },
+                }
+            }
+    }
 }
+
+
 
 fn sticky_exit_callback<T, F>(
     evt: IcedSctkEvent<T>,
