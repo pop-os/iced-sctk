@@ -196,7 +196,6 @@ where
 
     let surface_ids = HashMap::from([(init_id.clone(), id)]);
 
-    let id = SurfaceId::new(&init_id);
     let (runtime, ev_proxy) = {
         let ev_proxy = event_loop.proxy();
         let executor = E::new().map_err(Error::ExecutorCreationFailed)?;
@@ -214,7 +213,7 @@ where
     let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>> = HashMap::new();
     let popups: HashMap<SurfaceId, SctkPopup<A::Message>> = HashMap::new();
 
-    let (display, context, config, surface) = init_egl(&surface, 1, 1);
+    let (display, context, config, surface) = init_egl(&surface, 100, 100);
 
     let gl_context = context.make_current(&surface).unwrap();
     let mut surfaces = HashMap::new();
@@ -344,6 +343,7 @@ where
 
     let mut current_context_window = id;
 
+    let mut surface_sizes = HashMap::from([(id, (100, 100))]);
     while let Some(event) = receiver.next().await {
         match event {
             Event::LayerSurface(_) => todo!(),
@@ -367,13 +367,13 @@ where
                         LayerSurfaceEventVariant::Created(_) => todo!(),
                         LayerSurfaceEventVariant::Done => todo!(),
                         LayerSurfaceEventVariant::Configure(configure) => {
-                            if let Some(window) =
-                                surface_ids.get(&id).and_then(|id| windows.get_mut(id))
+                            if let Some(size) =
+                                surface_ids.get(&id).and_then(|id| surface_sizes.get_mut(id))
                             {
-                                window.current_size = Some(LogicalSize::new(
+                                *size = (
                                     configure.new_size.0,
                                     configure.new_size.1,
-                                ));
+                                );
                             }
                         }
                     },
@@ -397,9 +397,9 @@ where
                     // TODO do stuff here
                 }
                 IcedSctkEvent::RedrawRequested(id) => {
-                    if let Some((native_id, Some(window), Some(surface), Some(mut user_interface), Some(state))) =
+                    if let Some((native_id, Some(size), Some(egl_surface), Some(mut user_interface), Some(state))) =
                         surface_ids.get(&id).map(|id| {
-                            let window = windows.get_mut(id).map(|w| (w, *id));
+                            let window = surface_sizes.get_mut(id);
                             let surface = surfaces.get_mut(id);
                             let interface = interfaces.remove(id);
                             let state = states.get_mut(id);
@@ -410,7 +410,7 @@ where
 
                         if current_context_window != native_id {
                             if context
-                                .make_current(surface).is_ok() {
+                                .make_current(egl_surface).is_ok() {
                                     current_context_window = native_id;
                             } else {
                                 continue;
@@ -445,7 +445,8 @@ where
 
                             //     mouse_interaction = new_mouse_interaction;
                             // }
-                            surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
+                            dbg!(physical_size);
+                            egl_surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
 
                             compositor.resize_viewport(physical_size);
 
@@ -459,7 +460,7 @@ where
                             state.background_color(),
                             &debug.overlay(),
                         );
-                        let _ = surface.swap_buffers(&context);
+                        let _ = egl_surface.swap_buffers(&context);
 
                         debug.render_finished();
                     }

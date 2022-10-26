@@ -50,6 +50,22 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
             None => return,
         };
         let id = layer.surface.wl_surface().id();
+        let w = if configure.new_size.0 > 0 {
+            configure.new_size.0
+        } else if let Some(requested) = layer.requested_size.as_ref() {
+            requested.width
+        } else {
+            1
+        };
+        let h = if configure.new_size.1 > 0 {
+            configure.new_size.1
+        } else if let Some(requested) = layer.requested_size.as_ref() {
+            requested.width
+        } else {
+            1
+        };
+        layer.current_size.replace(LogicalSize::new(w, h));
+        layer.surface.wl_surface().commit();
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
             variant: LayerSurfaceEventVariant::Configure(configure),
             id: id.clone(),
