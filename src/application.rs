@@ -348,8 +348,6 @@ where
 
     let mut current_context_window = id;
 
-    let mut surface_sizes = HashMap::from([(id, (100, 100))]);
-
     let kbd_surface_id: Option<ObjectId> = None;
 
     'main: while let Some(event) = receiver.next().await {
@@ -410,11 +408,11 @@ where
                     LayerSurfaceEventVariant::Created(_) => todo!(),
                     LayerSurfaceEventVariant::Done => todo!(),
                     LayerSurfaceEventVariant::Configure(configure) => {
-                        if let Some(size) = surface_ids
+                        if let Some(state) = surface_ids
                             .get(&id)
-                            .and_then(|id| surface_sizes.get_mut(id))
+                            .and_then(|id| states.get_mut(id))
                         {
-                            *size = (configure.new_size.0, configure.new_size.1);
+                            state.set_logical_size(configure.new_size.0 as f64, configure.new_size.1 as f64);
                         }
                     }
                 },
@@ -547,16 +545,14 @@ where
             IcedSctkEvent::RedrawRequested(id) => {
                 if let Some((
                     native_id,
-                    Some(size),
                     Some(egl_surface),
                     Some(mut user_interface),
                     Some(state),
                 )) = surface_ids.get(&id).map(|id| {
-                    let window = surface_sizes.get_mut(id);
                     let surface = surfaces.get_mut(id);
                     let interface = interfaces.remove(id);
                     let state = states.get_mut(id);
-                    (*id, window, surface, interface, state)
+                    (*id, surface, interface, state)
                 }) {
                     println!("Rredrawing: {:?}", native_id);
                     debug.render_started();
@@ -652,6 +648,7 @@ where
     debug.view_finished();
 
     debug.layout_started();
+    dbg!(size);
     let user_interface = UserInterface::build(view, size, cache, renderer);
     debug.layout_finished();
 
@@ -667,7 +664,7 @@ where
     pub(crate) id: SurfaceIdWrapper,
     title: String,
     scale_factor: f64,
-    viewport: Viewport,
+    pub(crate) viewport: Viewport,
     viewport_changed: bool,
     cursor_position: Point,
     modifiers: Modifiers,
@@ -722,6 +719,11 @@ where
     /// Returns the logical [`Size`] of the [`Viewport`] of the [`State`].
     pub fn logical_size(&self) -> Size<f32> {
         self.viewport.logical_size()
+    }
+
+    /// Sets the logical [`Size`] of the [`Viewport`] of the [`State`].
+    pub fn set_logical_size(&mut self, w: f64, h: f64) {
+        self.viewport = Viewport::with_physical_size(Size { width: (w * self.scale_factor) as u32, height: (h * self.scale_factor) as u32 }, self.scale_factor)
     }
 
     /// Returns the current scale factor of the [`Viewport`] of the [`State`].
