@@ -25,12 +25,18 @@ use iced_native::{
     Element, Renderer,
 };
 
-use sctk::{reexports::client::Proxy, seat::{keyboard::Modifiers, pointer::{PointerEvent, PointerEventKind}}};
+use sctk::{
+    reexports::client::Proxy,
+    seat::{
+        keyboard::Modifiers,
+        pointer::{PointerEvent, PointerEventKind},
+    },
+};
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
 use glutin::{api::egl::context::PossiblyCurrentContext, prelude::*, surface::WindowSurface};
-use iced_graphics::{compositor, window, Color, Point, Viewport, renderer};
+use iced_graphics::{compositor, renderer, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
 use std::mem::ManuallyDrop;
@@ -261,9 +267,7 @@ where
             return;
         }
 
-        sender
-            .start_send(event)
-            .expect("Send event");
+        sender.start_send(event).expect("Send event");
 
         let poll = instance.as_mut().poll(&mut context);
 
@@ -354,28 +358,46 @@ where
             IcedSctkEvent::UserEvent(_) => todo!(),
             IcedSctkEvent::SctkEvent(event) => match event {
                 SctkEvent::SeatEvent { variant, .. } => todo!(),
-                SctkEvent::PointerEvent {
-                    variant,
-                    ..
-                } => {
-                    let (state, native_id) = match surface_ids.get(&variant.surface.id()).and_then(|id| states.get_mut(id).map(|state| (state, id))) {
+                SctkEvent::PointerEvent { variant, .. } => {
+                    let (state, native_id) = match surface_ids
+                        .get(&variant.surface.id())
+                        .and_then(|id| states.get_mut(id).map(|state| (state, id)))
+                    {
                         Some(s) => s,
                         None => continue,
                     };
                     match variant.kind {
-                    PointerEventKind::Enter { serial } => {
-                        state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32));
-                    },
-                    PointerEventKind::Leave { serial } => {
-                        state.set_cursor_position(Point::new(-1.0, -1.0));
-                    },
-                    PointerEventKind::Motion { time } => {
-                        state.set_cursor_position(Point::new(variant.position.0 as f32, variant.position.1 as f32))
-                    },
-                    PointerEventKind::Press { time, button, serial } => todo!(),
-                    PointerEventKind::Release { time, button, serial } => todo!(),
-                    PointerEventKind::Axis { time, horizontal, vertical, source } => todo!(),
-                }},
+                        PointerEventKind::Enter { serial } => {
+                            state.set_cursor_position(Point::new(
+                                variant.position.0 as f32,
+                                variant.position.1 as f32,
+                            ));
+                        }
+                        PointerEventKind::Leave { serial } => {
+                            state.set_cursor_position(Point::new(-1.0, -1.0));
+                        }
+                        PointerEventKind::Motion { time } => state.set_cursor_position(Point::new(
+                            variant.position.0 as f32,
+                            variant.position.1 as f32,
+                        )),
+                        PointerEventKind::Press {
+                            time,
+                            button,
+                            serial,
+                        } => todo!(),
+                        PointerEventKind::Release {
+                            time,
+                            button,
+                            serial,
+                        } => todo!(),
+                        PointerEventKind::Axis {
+                            time,
+                            horizontal,
+                            vertical,
+                            source,
+                        } => todo!(),
+                    }
+                }
                 SctkEvent::KeyboardEvent {
                     variant,
                     kbd_id,
@@ -386,13 +408,11 @@ where
                     LayerSurfaceEventVariant::Created(_) => todo!(),
                     LayerSurfaceEventVariant::Done => todo!(),
                     LayerSurfaceEventVariant::Configure(configure) => {
-                        if let Some(size) =
-                            surface_ids.get(&id).and_then(|id| surface_sizes.get_mut(id))
+                        if let Some(size) = surface_ids
+                            .get(&id)
+                            .and_then(|id| surface_sizes.get_mut(id))
                         {
-                            *size = (
-                                configure.new_size.0,
-                                configure.new_size.1,
-                            );
+                            *size = (configure.new_size.0, configure.new_size.1);
                         }
                     }
                 },
@@ -416,25 +436,27 @@ where
                 // TODO do stuff here
             }
             IcedSctkEvent::RedrawRequested(id) => {
-                if let Some((native_id, Some(size), Some(egl_surface), Some(mut user_interface), Some(state))) =
-                    surface_ids.get(&id).map(|id| {
-                        let window = surface_sizes.get_mut(id);
-                        let surface = surfaces.get_mut(id);
-                        let interface = interfaces.remove(id);
-                        let state = states.get_mut(id);
-                        (*id, window, surface, interface, state)
-                    })
-                {                        
+                if let Some((
+                    native_id,
+                    Some(size),
+                    Some(egl_surface),
+                    Some(mut user_interface),
+                    Some(state),
+                )) = surface_ids.get(&id).map(|id| {
+                    let window = surface_sizes.get_mut(id);
+                    let surface = surfaces.get_mut(id);
+                    let interface = interfaces.remove(id);
+                    let state = states.get_mut(id);
+                    (*id, window, surface, interface, state)
+                }) {
                     debug.render_started();
 
                     if current_context_window != native_id {
-                        if context
-                            .make_current(egl_surface).is_ok() {
-                                current_context_window = native_id;
+                        if context.make_current(egl_surface).is_ok() {
+                            current_context_window = native_id;
                         } else {
                             continue;
                         }
-
                     }
 
                     if state.viewport_changed() {
@@ -457,12 +479,15 @@ where
                         debug.draw_finished();
                         ev_proxy.send_event(Event::SetCursor(new_mouse_interaction));
 
-                        egl_surface.resize(&context, NonZeroU32::new(physical_size.width).unwrap(), NonZeroU32::new(physical_size.height).unwrap());
+                        egl_surface.resize(
+                            &context,
+                            NonZeroU32::new(physical_size.width).unwrap(),
+                            NonZeroU32::new(physical_size.height).unwrap(),
+                        );
 
                         compositor.resize_viewport(physical_size);
 
-                        let _ =
-                            interfaces.insert(native_id, user_interface);
+                        let _ = interfaces.insert(native_id, user_interface);
                     }
 
                     compositor.present(
@@ -478,7 +503,7 @@ where
             }
             IcedSctkEvent::RedrawEventsCleared => {
                 // TODO
-            },
+            }
             IcedSctkEvent::LoopDestroyed => todo!(),
         }
     }
