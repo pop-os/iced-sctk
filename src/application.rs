@@ -723,7 +723,11 @@ where
 
     /// Sets the logical [`Size`] of the [`Viewport`] of the [`State`].
     pub fn set_logical_size(&mut self, w: f64, h: f64) {
-        self.viewport = Viewport::with_physical_size(Size { width: (w * self.scale_factor) as u32, height: (h * self.scale_factor) as u32 }, self.scale_factor)
+        let old_size = self.viewport.logical_size();
+        if w != old_size.width.into() || h != old_size.height.into() {
+            self.viewport_changed = true;
+            self.viewport = Viewport::with_physical_size(Size { width: (w * self.scale_factor) as u32, height: (h * self.scale_factor) as u32 }, self.scale_factor)
+        }
     }
 
     /// Returns the current scale factor of the [`Viewport`] of the [`State`].
