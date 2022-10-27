@@ -1,5 +1,4 @@
 use iced_futures::futures;
-use sctk::reexports::client::ConnectError;
 
 /// An error that occurred while running an application.
 #[derive(Debug, thiserror::Error)]

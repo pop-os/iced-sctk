@@ -1,18 +1,14 @@
 use crate::{
-    dpi::{LogicalSize, PhysicalPosition},
     egl::init_egl,
     error::{self, Error},
     event_loop::{
         self,
         control_flow::ControlFlow,
         proxy,
-        state::{SctkLayerSurface, SctkPopup, SctkState, SctkWindow},
+        state::{SctkState, SctkWindow},
         SctkEventLoop,
     },
-    sctk_event::{
-        IcedSctkEvent, KeyboardEventVariant, LayerSurfaceEventVariant, PopupEventVariant,
-        SctkEvent, StartCause, WindowEventVariant,
-    },
+    sctk_event::{IcedSctkEvent, KeyboardEventVariant, LayerSurfaceEventVariant, SctkEvent},
     settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
 use futures::{channel::mpsc, task, Future, FutureExt, StreamExt};
@@ -20,17 +16,14 @@ use iced_native::{
     application::{self, StyleSheet},
     clipboard::{self, Null},
     command::platform_specific,
-    mouse::{self, Interaction, ScrollDelta},
+    mouse::{self, Interaction},
     widget::operation,
     Element, Renderer,
 };
 
 use sctk::{
     reexports::client::Proxy,
-    seat::{
-        keyboard::Modifiers,
-        pointer::{PointerEvent, PointerEventKind},
-    },
+    seat::{keyboard::Modifiers, pointer::PointerEventKind},
 };
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
@@ -197,13 +190,19 @@ where
     let mut event_loop =
         SctkEventLoop::<A::Message>::new(&settings).expect("Failed to initialize the event loop");
 
-    let (id, surface) = match &settings.surface {
-        settings::InitialSurface::LayerSurface(l) => event_loop.get_layer_surface(l.clone()),
+    let (object_id, native_id, surface) = match &settings.surface {
+        settings::InitialSurface::LayerSurface(l) => {
+            let (native_id, surface) = event_loop.get_layer_surface(l.clone());
+            (
+                surface.id(),
+                SurfaceIdWrapper::LayerSurface(native_id),
+                surface,
+            )
+        }
         settings::InitialSurface::XdgWindow(_) => todo!(),
     };
-    let init_id = surface.id();
 
-    let surface_ids = HashMap::from([(init_id.clone(), id)]);
+    let surface_ids = HashMap::from([(object_id.clone(), native_id)]);
 
     let (runtime, ev_proxy) = {
         let ev_proxy = event_loop.proxy();
@@ -218,15 +217,11 @@ where
         runtime.enter(|| A::new(flags))
     };
 
-    let windows: HashMap<SurfaceId, SctkWindow<A::Message>> = HashMap::new();
-    let layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>> = HashMap::new();
-    let popups: HashMap<SurfaceId, SctkPopup<A::Message>> = HashMap::new();
-
     let (_display, context, _config, surface) = init_egl(&surface, 100, 100);
 
     let gl_context = context.make_current(&surface).unwrap();
     let mut surfaces = HashMap::new();
-    surfaces.insert(id, surface);
+    surfaces.insert(native_id.inner(), surface);
 
     #[allow(unsafe_code)]
     let (compositor, renderer) = unsafe {
@@ -245,18 +240,15 @@ where
         ev_proxy,
         debug,
         receiver,
-        windows,
-        layer_surfaces,
-        popups,
         surfaces,
         surface_ids,
         gl_context,
         init_command,
         exit_on_close_request,
         if is_layer_surface {
-            SurfaceIdWrapper::LayerSurface(id)
+            SurfaceIdWrapper::LayerSurface(native_id.inner())
         } else {
-            SurfaceIdWrapper::Window(id)
+            SurfaceIdWrapper::Window(native_id.inner())
         },
     ));
 
@@ -288,11 +280,8 @@ async fn run_instance<A, E, C>(
     mut ev_proxy: proxy::Proxy<Event<A::Message>>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
-    mut windows: HashMap<SurfaceId, SctkWindow<A::Message>>,
-    mut layer_surfaces: HashMap<SurfaceId, SctkLayerSurface<A::Message>>,
-    mut popups: HashMap<SurfaceId, SctkPopup<A::Message>>,
     mut surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
-    mut surface_ids: HashMap<ObjectId, SurfaceId>,
+    mut surface_ids: HashMap<ObjectId, SurfaceIdWrapper>,
     mut context: PossiblyCurrentContext,
     init_command: Command<A::Message>,
     exit_on_close_request: bool,
@@ -352,7 +341,8 @@ where
 
     let mut current_context_window = id;
 
-    let kbd_surface_id: Option<ObjectId> = None;
+    let mut kbd_surface_id: Option<ObjectId> = None;
+    let mut mods = Modifiers::default();
 
     'main: while let Some(event) = receiver.next().await {
         match event {
@@ -361,51 +351,61 @@ where
                 messages.push(message);
             }
             IcedSctkEvent::SctkEvent(event) => match event {
-                SctkEvent::SeatEvent { variant, .. } => todo!(),
+                SctkEvent::SeatEvent { .. } => {} // TODO Ashley: handle later possibly if multiseat support is wanted
                 SctkEvent::PointerEvent { variant, .. } => {
-                    let (state, native_id) = match surface_ids
+                    let (state, _native_id) = match surface_ids
                         .get(&variant.surface.id())
-                        .and_then(|id| states.get_mut(id).map(|state| (state, id)))
+                        .and_then(|id| states.get_mut(&id.inner()).map(|state| (state, id)))
                     {
                         Some(s) => s,
                         None => continue,
                     };
                     match variant.kind {
-                        PointerEventKind::Enter { serial } => {
+                        PointerEventKind::Enter { .. } => {
                             state.set_cursor_position(Point::new(
                                 variant.position.0 as f32,
                                 variant.position.1 as f32,
                             ));
                         }
-                        PointerEventKind::Leave { serial } => {
+                        PointerEventKind::Leave { .. } => {
                             state.set_cursor_position(Point::new(-1.0, -1.0));
                         }
-                        PointerEventKind::Motion { time } => state.set_cursor_position(Point::new(
+                        PointerEventKind::Motion { .. } => state.set_cursor_position(Point::new(
                             variant.position.0 as f32,
                             variant.position.1 as f32,
                         )),
-                        PointerEventKind::Press {
-                            ..
-                        } |
-                        PointerEventKind::Release {
-                            ..
-                        } |
-                        PointerEventKind::Axis {
-                            ..
-                        } => {},
+                        PointerEventKind::Press { .. }
+                        | PointerEventKind::Release { .. }
+                        | PointerEventKind::Axis { .. } => {}
                     }
                 }
-                SctkEvent::KeyboardEvent {
-                    variant,
-                    kbd_id,
-                    seat_id,
-                } => todo!(),
+                SctkEvent::KeyboardEvent { variant, .. } => match variant {
+                    KeyboardEventVariant::Leave(_) => {
+                        kbd_surface_id.take();
+                    }
+                    KeyboardEventVariant::Enter(object_id) => {
+                        kbd_surface_id.replace(object_id);
+                    }
+                    KeyboardEventVariant::Press(_) => {}
+                    KeyboardEventVariant::Release(_) => {}
+                    KeyboardEventVariant::Modifiers(mods) => {
+                        if let Some(state) = kbd_surface_id
+                            .as_ref()
+                            .and_then(|id| surface_ids.get(&id))
+                            .and_then(|id| states.get_mut(&id.inner()))
+                        {
+                            state.modifiers = mods;
+                        }
+                    }
+                },
                 SctkEvent::WindowEvent { variant, id } => todo!(),
                 SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
                     LayerSurfaceEventVariant::Created(_) => todo!(),
                     LayerSurfaceEventVariant::Done => todo!(),
                     LayerSurfaceEventVariant::Configure(configure) => {
-                        if let Some(state) = surface_ids.get(&id).and_then(|id| states.get_mut(id))
+                        if let Some(state) = surface_ids
+                            .get(&id)
+                            .and_then(|id| states.get_mut(&id.inner()))
                         {
                             state.set_logical_size(
                                 configure.new_size.0 as f64,
@@ -436,7 +436,10 @@ where
                     id,
                     inner_size: _,
                 } => {
-                    if let Some(state) = surface_ids.get(&id).and_then(|id| states.get_mut(id)) {
+                    if let Some(state) = surface_ids
+                        .get(&id)
+                        .and_then(|id| states.get_mut(&id.inner()))
+                    {
                         state.set_scale_factor(factor);
                     }
                 }
@@ -480,8 +483,10 @@ where
                         continue;
                     }
                     debug.event_processing_started();
-                    let native_events: Vec<_> =
-                        filtered.into_iter().filter_map(|e| e.to_native()).collect();
+                    let native_events: Vec<_> = filtered
+                        .into_iter()
+                        .filter_map(|e| e.to_native(&mut mods, &surface_ids))
+                        .collect();
 
                     let (interface_state, statuses) = {
                         let user_interface = interfaces.get_mut(&id).unwrap();
@@ -546,19 +551,19 @@ where
             IcedSctkEvent::RedrawRequested(id) => {
                 if let Some((native_id, Some(egl_surface), Some(mut user_interface), Some(state))) =
                     surface_ids.get(&id).map(|id| {
-                        let surface = surfaces.get_mut(id);
-                        let interface = interfaces.remove(id);
-                        let state = states.get_mut(id);
+                        let surface = surfaces.get_mut(&id.inner());
+                        let interface = interfaces.remove(&id.inner());
+                        let state = states.get_mut(&id.inner());
                         (*id, surface, interface, state)
                     })
                 {
                     debug.render_started();
 
-                    if current_context_window != native_id {
+                    if current_context_window != native_id.inner() {
                         if context.make_current(egl_surface).is_ok() {
-                            current_context_window = native_id;
+                            current_context_window = native_id.inner();
                         } else {
-                            interfaces.insert(native_id, user_interface);
+                            interfaces.insert(native_id.inner(), user_interface);
                             continue;
                         }
                     }
@@ -591,9 +596,9 @@ where
 
                         compositor.resize_viewport(physical_size);
 
-                        let _ = interfaces.insert(native_id, user_interface);
+                        let _ = interfaces.insert(native_id.inner(), user_interface);
                     } else {
-                        interfaces.insert(native_id, user_interface);
+                        interfaces.insert(native_id.inner(), user_interface);
                     }
 
                     compositor.present(
@@ -623,6 +628,17 @@ pub enum SurfaceIdWrapper {
     Window(SurfaceId),
     Popup(SurfaceId),
 }
+
+impl SurfaceIdWrapper {
+    pub fn inner(&self) -> SurfaceId {
+        match self {
+            SurfaceIdWrapper::LayerSurface(id) => *id,
+            SurfaceIdWrapper::Window(id) => *id,
+            SurfaceIdWrapper::Popup(id) => *id,
+        }
+    }
+}
+
 /// Builds a [`UserInterface`] for the provided [`Application`], logging
 /// [`struct@Debug`] information accordingly.
 pub fn build_user_interface<'a, A: Application>(
@@ -780,39 +796,6 @@ where
         self.cursor_position = p;
     }
 
-    /// Processes the provided window event and updates the [`State`]
-    /// accordingly.
-    pub(crate) fn update_window(
-        &mut self,
-        window: &SctkWindow<A::Message>,
-        event: &WindowEventVariant,
-        _debug: &mut Debug,
-    ) {
-        todo!()
-    }
-
-    /// Processes the provided layer surface event and updates the [`State`]
-    /// accordingly.
-    pub(crate) fn update_layer_surface(
-        &mut self,
-        layer_surface: &SctkLayerSurface<A::Message>,
-        event: &LayerSurfaceEventVariant,
-        _debug: &mut Debug,
-    ) {
-        todo!()
-    }
-
-    /// Processes the provided popup event and updates the [`State`]
-    /// accordingly.
-    pub(crate) fn update_popup(
-        &mut self,
-        popup: &SctkPopup<A::Message>,
-        event: &PopupEventVariant,
-        _debug: &mut Debug,
-    ) {
-        todo!()
-    }
-
     /// Synchronizes the [`State`] with its [`Application`] and its respective
     /// windows.
     ///
@@ -824,38 +807,6 @@ where
         &mut self,
         application: &A,
         window: &SctkWindow<A::Message>,
-        proxy: &proxy::Proxy<Event<A::Message>>,
-    ) {
-        self.synchronize(application);
-    }
-
-    /// Synchronizes the [`State`] with its [`Application`] and its respective
-    /// windows.
-    ///
-    /// Normally an [`Application`] should be synchronized with its [`State`]
-    /// and window after calling [`Application::update`].
-    ///
-    /// [`Application::update`]: crate::Program::update
-    pub(crate) fn synchronize_layer_surface(
-        &mut self,
-        application: &A,
-        window: &SctkPopup<A::Message>,
-        proxy: &proxy::Proxy<Event<A::Message>>,
-    ) {
-        self.synchronize(application);
-    }
-
-    /// Synchronizes the [`State`] with its [`Application`] and its respective
-    /// windows.
-    ///
-    /// Normally an [`Application`] should be synchronized with its [`State`]
-    /// and window after calling [`Application::update`].
-    ///
-    /// [`Application::update`]: crate::Program::update
-    pub(crate) fn synchronize_popup(
-        &mut self,
-        application: &A,
-        window: &SctkPopup<A::Message>,
         proxy: &proxy::Proxy<Event<A::Message>>,
     ) {
         self.synchronize(application);

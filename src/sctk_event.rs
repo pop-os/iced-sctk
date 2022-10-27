@@ -1,17 +1,18 @@
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
-use crate::dpi::PhysicalSize;
+use crate::{application::SurfaceIdWrapper, conversion::keysym_to_vkey, dpi::PhysicalSize};
 use iced_graphics::Point;
 use iced_native::{
+    keyboard,
     mouse::{self, ScrollDelta},
-    window::Id as SurfaceId,
+    window::{self, Id as SurfaceId},
 };
 use sctk::{
     output::OutputInfo,
     reexports::client::{backend::ObjectId, protocol::wl_pointer::AxisSource},
     seat::{
         keyboard::{KeyEvent, Modifiers},
-        pointer::{PointerEvent, PointerEventKind, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, AxisScroll},
+        pointer::{AxisScroll, PointerEvent, PointerEventKind, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT},
         Capability,
     },
     shell::{
@@ -258,21 +259,22 @@ pub struct SurfaceCompositorUpdate {
 }
 
 impl SctkEvent {
-    pub fn to_native(self) -> Option<iced_native::Event> {
+    pub fn to_native(
+        self,
+        modifiers: &mut Modifiers,
+        surface_ids: &HashMap<ObjectId, SurfaceIdWrapper>,
+    ) -> Option<iced_native::Event> {
         match self {
-            SctkEvent::SeatEvent { variant, id } => None,
-            SctkEvent::PointerEvent {
-                variant,
-                ptr_id,
-                seat_id,
-            } => match variant.kind {
-                PointerEventKind::Enter { serial } => {
+            // TODO Ashley: Platform specific multi-seat events?
+            SctkEvent::SeatEvent { .. } => None,
+            SctkEvent::PointerEvent { variant, .. } => match variant.kind {
+                PointerEventKind::Enter { .. } => {
                     Some(iced_native::Event::Mouse(mouse::Event::CursorEntered))
                 }
-                PointerEventKind::Leave { serial } => {
+                PointerEventKind::Leave { .. } => {
                     Some(iced_native::Event::Mouse(mouse::Event::CursorLeft))
                 }
-                PointerEventKind::Motion { time } => {
+                PointerEventKind::Motion { .. } => {
                     Some(iced_native::Event::Mouse(mouse::Event::CursorMoved {
                         position: Point::new(variant.position.0 as f32, variant.position.1 as f32),
                     }))
@@ -281,29 +283,65 @@ impl SctkEvent {
                     time: _,
                     button,
                     serial: _,
-                } => pointer_button_to_native(button).map(|b|iced_native::Event::Mouse(mouse::Event::ButtonPressed(b))), // TODO Ashley: conversion
+                } => pointer_button_to_native(button)
+                    .map(|b| iced_native::Event::Mouse(mouse::Event::ButtonPressed(b))), // TODO Ashley: conversion
                 PointerEventKind::Release {
                     time: _,
                     button,
                     serial: _,
-                } => pointer_button_to_native(button).map(|b|iced_native::Event::Mouse(mouse::Event::ButtonReleased(b))), // TODO Ashley: conversion
+                } => pointer_button_to_native(button)
+                    .map(|b| iced_native::Event::Mouse(mouse::Event::ButtonReleased(b))), // TODO Ashley: conversion
                 PointerEventKind::Axis {
                     time: _,
                     horizontal,
                     vertical,
                     source,
-                } => pointer_axis_to_native(source, horizontal, vertical).map(|a| iced_native::Event::Mouse(mouse::Event::WheelScrolled { delta: a })), // TODO Ashley: conversion
+                } => pointer_axis_to_native(source, horizontal, vertical)
+                    .map(|a| iced_native::Event::Mouse(mouse::Event::WheelScrolled { delta: a })), // TODO Ashley: conversion
             },
             SctkEvent::KeyboardEvent {
                 variant,
-                kbd_id,
-                seat_id,
+                kbd_id: _,
+                seat_id: _,
             } => match variant {
-                KeyboardEventVariant::Leave(_) => todo!(),
-                KeyboardEventVariant::Enter(_) => todo!(),
-                KeyboardEventVariant::Press(_) => todo!(),
-                KeyboardEventVariant::Release(_) => todo!(),
-                KeyboardEventVariant::Modifiers(_) => todo!(),
+                KeyboardEventVariant::Leave(id) => {
+                    // TODO Ashley: Platform specific events
+                    surface_ids.get(&id).map(|id| match id {
+                        SurfaceIdWrapper::LayerSurface(_id) => todo!(),
+                        SurfaceIdWrapper::Window(id) => {
+                            iced_native::Event::Window(*id, window::Event::Unfocused)
+                        }
+                        SurfaceIdWrapper::Popup(_id) => todo!(),
+                    })
+                }
+                KeyboardEventVariant::Enter(id) => {
+                    // TODO Ashley: needs surface type to send the right platform specific event for unfocusing
+                    surface_ids.get(&id).map(|id| match id {
+                        SurfaceIdWrapper::LayerSurface(_id) => todo!(),
+                        SurfaceIdWrapper::Window(id) => {
+                            iced_native::Event::Window(*id, window::Event::Focused)
+                        }
+                        SurfaceIdWrapper::Popup(_id) => todo!(),
+                    })
+                }
+                KeyboardEventVariant::Press(p) => keysym_to_vkey(p.keysym).map(|k| {
+                    iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
+                        key_code: k,
+                        modifiers: modifiers_to_native(*modifiers),
+                    })
+                }),
+                KeyboardEventVariant::Release(k) => keysym_to_vkey(k.keysym).map(|k| {
+                    iced_native::Event::Keyboard(keyboard::Event::KeyReleased {
+                        key_code: k,
+                        modifiers: modifiers_to_native(*modifiers),
+                    })
+                }),
+                KeyboardEventVariant::Modifiers(new_mods) => {
+                    *modifiers = new_mods;
+                    Some(iced_native::Event::Keyboard(
+                        keyboard::Event::ModifiersChanged(modifiers_to_native(new_mods)),
+                    ))
+                }
             },
             SctkEvent::WindowEvent { variant, id } => None,
             SctkEvent::LayerSurfaceEvent { variant, id } => None,
@@ -331,15 +369,47 @@ pub fn pointer_button_to_native(button: u32) -> Option<mouse::Button> {
         BTN_LEFT => Some(mouse::Button::Left),
         BTN_MIDDLE => Some(mouse::Button::Middle),
         BTN_RIGHT => Some(mouse::Button::Right),
-        b => b.try_into().ok().map(|b| mouse::Button::Other(b))
+        b => b.try_into().ok().map(|b| mouse::Button::Other(b)),
     }
 }
 
-pub fn pointer_axis_to_native(source: Option<AxisSource>, horizontal: AxisScroll, vertical: AxisScroll) -> Option<ScrollDelta> {
-    source.map(|source| {
-        match source {
-            AxisSource::Wheel | AxisSource::WheelTilt => ScrollDelta::Lines { x: horizontal.discrete as f32, y: vertical.discrete as f32 },
-            AxisSource::Finger | AxisSource::Continuous | _ => ScrollDelta::Pixels { x: horizontal.absolute as f32, y: vertical.absolute as f32 },
-        }
+pub fn pointer_axis_to_native(
+    source: Option<AxisSource>,
+    horizontal: AxisScroll,
+    vertical: AxisScroll,
+) -> Option<ScrollDelta> {
+    source.map(|source| match source {
+        AxisSource::Wheel | AxisSource::WheelTilt => ScrollDelta::Lines {
+            x: horizontal.discrete as f32,
+            y: vertical.discrete as f32,
+        },
+        AxisSource::Finger | AxisSource::Continuous | _ => ScrollDelta::Pixels {
+            x: horizontal.absolute as f32,
+            y: vertical.absolute as f32,
+        },
     })
+}
+
+pub fn modifiers_to_native(mods: Modifiers) -> keyboard::Modifiers {
+    let mut native_mods = keyboard::Modifiers::empty();
+    if mods.alt {
+        native_mods = native_mods.union(keyboard::Modifiers::ALT);
+    }
+    if mods.ctrl {
+        native_mods = native_mods.union(keyboard::Modifiers::CTRL);
+    }
+    if mods.logo {
+        native_mods = native_mods.union(keyboard::Modifiers::LOGO);
+    }
+    if mods.shift {
+        native_mods = native_mods.union(keyboard::Modifiers::SHIFT);
+    }
+    // TODO Ashley: missing modifiers as platform specific additions?
+    // if mods.caps_lock {
+    // native_mods = native_mods.union(keyboard::Modifier);
+    // }
+    // if mods.num_lock {
+    //     native_mods = native_mods.union(keyboard::Modifiers::);
+    // }
+    native_mods
 }

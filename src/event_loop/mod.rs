@@ -13,8 +13,8 @@ use crate::{
     application::Event,
     dpi::LogicalSize,
     sctk_event::{
-        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, SeatEventVariant, StartCause,
-        SurfaceCompositorUpdate, SurfaceUserRequest, WindowEventVariant,
+        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceCompositorUpdate,
+        SurfaceUserRequest, WindowEventVariant,
     },
     settings,
 };
@@ -470,7 +470,16 @@ where
                         variant,
                         kbd_id,
                         seat_id,
-                    } => {}
+                    } => sticky_exit_callback(
+                        IcedSctkEvent::SctkEvent(SctkEvent::KeyboardEvent {
+                            variant,
+                            kbd_id,
+                            seat_id,
+                        }),
+                        &self.state,
+                        &mut control_flow,
+                        &mut callback,
+                    ),
                     SctkEvent::WindowEvent { variant, id } => todo!(),
                     SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
                         crate::sctk_event::LayerSurfaceEventVariant::Created(_) => todo!(),
