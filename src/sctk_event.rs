@@ -2,7 +2,10 @@ use std::time::Instant;
 
 use crate::dpi::PhysicalSize;
 use iced_graphics::Point;
-use iced_native::{window::Id as SurfaceId, mouse::{self, ScrollDelta}};
+use iced_native::{
+    mouse::{self, ScrollDelta},
+    window::Id as SurfaceId,
+};
 use sctk::{
     output::OutputInfo,
     reexports::client::backend::ObjectId,
@@ -258,15 +261,50 @@ impl SctkEvent {
     pub fn to_native(self) -> Option<iced_native::Event> {
         match self {
             SctkEvent::SeatEvent { variant, id } => None,
-            SctkEvent::PointerEvent { variant, ptr_id, seat_id } => match variant.kind {
-                PointerEventKind::Enter { serial } => Some(iced_native::Event::Mouse(mouse::Event::CursorEntered)),
-                PointerEventKind::Leave { serial } => Some(iced_native::Event::Mouse(mouse::Event::CursorLeft)),
-                PointerEventKind::Motion { time } => Some(iced_native::Event::Mouse(mouse::Event::CursorMoved { position: Point::new(variant.position.0 as f32, variant.position.1 as f32) })),
-                PointerEventKind::Press { time, button, serial } => Some(iced_native::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))), // TODO Ashley: conversion
-                PointerEventKind::Release { time, button, serial } => Some(iced_native::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))),// TODO Ashley: conversion
-                PointerEventKind::Axis { time, horizontal, vertical, source } => Some(iced_native::Event::Mouse(mouse::Event::WheelScrolled { delta: ScrollDelta::Lines { x: 0.0, y: 1.0 } })), // TODO Ashley: conversion
+            SctkEvent::PointerEvent {
+                variant,
+                ptr_id,
+                seat_id,
+            } => match variant.kind {
+                PointerEventKind::Enter { serial } => {
+                    Some(iced_native::Event::Mouse(mouse::Event::CursorEntered))
+                }
+                PointerEventKind::Leave { serial } => {
+                    Some(iced_native::Event::Mouse(mouse::Event::CursorLeft))
+                }
+                PointerEventKind::Motion { time } => {
+                    Some(iced_native::Event::Mouse(mouse::Event::CursorMoved {
+                        position: Point::new(variant.position.0 as f32, variant.position.1 as f32),
+                    }))
+                }
+                PointerEventKind::Press {
+                    time,
+                    button,
+                    serial,
+                } => Some(iced_native::Event::Mouse(mouse::Event::ButtonPressed(
+                    mouse::Button::Left,
+                ))), // TODO Ashley: conversion
+                PointerEventKind::Release {
+                    time,
+                    button,
+                    serial,
+                } => Some(iced_native::Event::Mouse(mouse::Event::ButtonReleased(
+                    mouse::Button::Left,
+                ))), // TODO Ashley: conversion
+                PointerEventKind::Axis {
+                    time,
+                    horizontal,
+                    vertical,
+                    source,
+                } => Some(iced_native::Event::Mouse(mouse::Event::WheelScrolled {
+                    delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                })), // TODO Ashley: conversion
             },
-            SctkEvent::KeyboardEvent { variant, kbd_id, seat_id } => match variant {
+            SctkEvent::KeyboardEvent {
+                variant,
+                kbd_id,
+                seat_id,
+            } => match variant {
                 KeyboardEventVariant::Leave(_) => todo!(),
                 KeyboardEventVariant::Enter(_) => todo!(),
                 KeyboardEventVariant::Press(_) => todo!(),
@@ -275,12 +313,21 @@ impl SctkEvent {
             },
             SctkEvent::WindowEvent { variant, id } => None,
             SctkEvent::LayerSurfaceEvent { variant, id } => None,
-            SctkEvent::PopupEvent { variant, toplevel_id, parent_id, id } => None,
+            SctkEvent::PopupEvent {
+                variant,
+                toplevel_id,
+                parent_id,
+                id,
+            } => None,
             SctkEvent::NewOutput { id, info } => None,
             SctkEvent::UpdateOutput { id, info } => None,
             SctkEvent::RemovedOutput(_) => None,
             SctkEvent::Draw(_) => None,
-            SctkEvent::ScaleFactorChanged { factor, id, inner_size } => None,
+            SctkEvent::ScaleFactorChanged {
+                factor,
+                id,
+                inner_size,
+            } => None,
         }
     }
 }

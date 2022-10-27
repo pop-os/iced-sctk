@@ -10,12 +10,12 @@ use crate::{
         SctkEventLoop,
     },
     sctk_event::{
-        IcedSctkEvent, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent, StartCause,
-        WindowEventVariant, KeyboardEventVariant,
+        IcedSctkEvent, KeyboardEventVariant, LayerSurfaceEventVariant, PopupEventVariant,
+        SctkEvent, StartCause, WindowEventVariant,
     },
     settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
-use futures::{channel::mpsc, task, Future, StreamExt, FutureExt};
+use futures::{channel::mpsc, task, Future, FutureExt, StreamExt};
 use iced_native::{
     application::{self, StyleSheet},
     clipboard::{self, Null},
@@ -339,7 +339,11 @@ where
             || compositor.fetch_information(),
         );
     }
-    runtime.track(application.subscription().map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e))));
+    runtime.track(
+        application
+            .subscription()
+            .map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e))),
+    );
 
     let mut mouse_interaction = mouse::Interaction::default();
     let mut events: Vec<SctkEvent> = Vec::new();
@@ -355,7 +359,7 @@ where
             IcedSctkEvent::NewEvents(_) => {} // TODO Ashley: Seems to be ignored in iced_winit so i'll ignore for now
             IcedSctkEvent::UserEvent(message) => {
                 messages.push(message);
-            },
+            }
             IcedSctkEvent::SctkEvent(event) => match event {
                 SctkEvent::SeatEvent { variant, .. } => todo!(),
                 SctkEvent::PointerEvent { variant, .. } => {
@@ -408,11 +412,12 @@ where
                     LayerSurfaceEventVariant::Created(_) => todo!(),
                     LayerSurfaceEventVariant::Done => todo!(),
                     LayerSurfaceEventVariant::Configure(configure) => {
-                        if let Some(state) = surface_ids
-                            .get(&id)
-                            .and_then(|id| states.get_mut(id))
+                        if let Some(state) = surface_ids.get(&id).and_then(|id| states.get_mut(id))
                         {
-                            state.set_logical_size(configure.new_size.0 as f64, configure.new_size.1 as f64);
+                            state.set_logical_size(
+                                configure.new_size.0 as f64,
+                                configure.new_size.1 as f64,
+                            );
                         }
                     }
                 },
@@ -423,33 +428,45 @@ where
                     id,
                 } => todo!(),
                 // TODO forward these events to an application which requests them?
-                SctkEvent::NewOutput { id, info } => todo!(),
-                SctkEvent::UpdateOutput { id, info } => todo!(),
-                SctkEvent::RemovedOutput(_) => todo!(),
+                SctkEvent::NewOutput { id, info } => {
+                    events.push(SctkEvent::NewOutput { id, info });
+                }
+                SctkEvent::UpdateOutput { id, info } => {
+                    events.push(SctkEvent::UpdateOutput { id, info });
+                }
+                SctkEvent::RemovedOutput(id) => {
+                    events.push(SctkEvent::RemovedOutput(id));
+                }
                 SctkEvent::Draw(_) => unimplemented!(), // probably should never be forwarded here...
                 SctkEvent::ScaleFactorChanged {
                     factor,
                     id,
-                    inner_size,
-                } => todo!(),
+                    inner_size: _,
+                } => {
+                    if let Some(state) = surface_ids.get(&id).and_then(|id| states.get_mut(id)) {
+                        state.set_scale_factor(factor);
+                    }
+                }
             },
             IcedSctkEvent::MainEventsCleared => {
-                println!("Main events cleared");
                 for (object_id, native_id) in &surface_ids {
-                    println!("updating {:?}", native_id);
                     // returns (remove, copy)
-                    let filter_events = |e: &SctkEvent| {
-                        match e {
-                            SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
-                            SctkEvent::PointerEvent { variant, .. } => (&variant.surface.id() == object_id, false),
-                            SctkEvent::KeyboardEvent { .. } => (kbd_surface_id.as_ref() == Some(&object_id), false),
-                            SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
-                            SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
-                            SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
-                            SctkEvent::NewOutput {..} | SctkEvent::UpdateOutput { .. } | SctkEvent::RemovedOutput(_) => (false, true),
-                            SctkEvent::Draw(_) => unimplemented!(),
-                            SctkEvent::ScaleFactorChanged { id, .. } => (id == object_id, false),
+                    let filter_events = |e: &SctkEvent| match e {
+                        SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
+                        SctkEvent::PointerEvent { variant, .. } => {
+                            (&variant.surface.id() == object_id, false)
                         }
+                        SctkEvent::KeyboardEvent { .. } => {
+                            (kbd_surface_id.as_ref() == Some(&object_id), false)
+                        }
+                        SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
+                        SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
+                        SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
+                        SctkEvent::NewOutput { .. }
+                        | SctkEvent::UpdateOutput { .. }
+                        | SctkEvent::RemovedOutput(_) => (false, true),
+                        SctkEvent::Draw(_) => unimplemented!(),
+                        SctkEvent::ScaleFactorChanged { id, .. } => (id == object_id, false),
                     };
                     let mut filtered = Vec::with_capacity(events.len());
                     let mut i = 0;
@@ -465,20 +482,16 @@ where
                             i += 1;
                         }
                     }
-                    let cursor_position =
-                        states.get(&id).unwrap().cursor_position();
+                    let cursor_position = states.get(&id).unwrap().cursor_position();
                     if filtered.is_empty() && messages.is_empty() {
                         continue;
                     }
                     debug.event_processing_started();
-                    let native_events: Vec<_> = filtered.into_iter().filter_map(|e| {
-                        e.to_native()
-                    }).collect();
-
-                    dbg!(&interfaces.keys());
+                    let native_events: Vec<_> =
+                        filtered.into_iter().filter_map(|e| e.to_native()).collect();
 
                     let (interface_state, statuses) = {
-                    let user_interface = interfaces.get_mut(&id).unwrap();
+                        let user_interface = interfaces.get_mut(&id).unwrap();
                         user_interface.update(
                             native_events.as_slice(), // TODO Ashley: pass filtered events & add platform specific events to iced_native
                             cursor_position,
@@ -488,27 +501,18 @@ where
                         )
                     };
                     debug.event_processing_finished();
-                    for event in native_events.into_iter().zip(statuses.into_iter())
-                    {
+                    for event in native_events.into_iter().zip(statuses.into_iter()) {
                         runtime.broadcast(event);
                     }
-                    dbg!(interface_state);
-
 
                     if !messages.is_empty()
-                        || matches!(
-                            interface_state,
-                            user_interface::State::Outdated
-                        )
+                        || matches!(interface_state, user_interface::State::Outdated)
                     {
                         let state = &mut states.get_mut(&id).unwrap();
-                        let pure_states: HashMap<_, _> =
-                            ManuallyDrop::into_inner(interfaces)
-                                .drain()
-                                .map(|(id, interface)| {
-                                    (id, interface.into_cache())
-                                })
-                                .collect();
+                        let pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
+                            .drain()
+                            .map(|(id, interface)| (id, interface.into_cache()))
+                            .collect();
 
                         // Update application
                         update(
@@ -523,7 +527,7 @@ where
                             || compositor.fetch_information(),
                         );
 
-                        // Update window
+                        // Update state
                         state.synchronize(&application);
 
                         let should_exit = application.should_exit();
@@ -536,6 +540,10 @@ where
                             pure_states,
                         ));
 
+                        ev_proxy.send_event(Event::SctkEvent(IcedSctkEvent::RedrawRequested(
+                            object_id.clone(),
+                        )));
+
                         if should_exit {
                             break 'main;
                         }
@@ -543,18 +551,14 @@ where
                 }
             }
             IcedSctkEvent::RedrawRequested(id) => {
-                if let Some((
-                    native_id,
-                    Some(egl_surface),
-                    Some(mut user_interface),
-                    Some(state),
-                )) = surface_ids.get(&id).map(|id| {
-                    let surface = surfaces.get_mut(id);
-                    let interface = interfaces.remove(id);
-                    let state = states.get_mut(id);
-                    (*id, surface, interface, state)
-                }) {
-                    println!("Rredrawing: {:?}", native_id);
+                if let Some((native_id, Some(egl_surface), Some(mut user_interface), Some(state))) =
+                    surface_ids.get(&id).map(|id| {
+                        let surface = surfaces.get_mut(id);
+                        let interface = interfaces.remove(id);
+                        let state = states.get_mut(id);
+                        (*id, surface, interface, state)
+                    })
+                {
                     debug.render_started();
 
                     if current_context_window != native_id {
@@ -648,7 +652,6 @@ where
     debug.view_finished();
 
     debug.layout_started();
-    dbg!(size);
     let user_interface = UserInterface::build(view, size, cache, renderer);
     debug.layout_finished();
 
@@ -726,13 +729,33 @@ where
         let old_size = self.viewport.logical_size();
         if w != old_size.width.into() || h != old_size.height.into() {
             self.viewport_changed = true;
-            self.viewport = Viewport::with_physical_size(Size { width: (w * self.scale_factor) as u32, height: (h * self.scale_factor) as u32 }, self.scale_factor)
+            self.viewport = Viewport::with_physical_size(
+                Size {
+                    width: (w * self.scale_factor) as u32,
+                    height: (h * self.scale_factor) as u32,
+                },
+                self.scale_factor,
+            );
         }
     }
 
     /// Returns the current scale factor of the [`Viewport`] of the [`State`].
     pub fn scale_factor(&self) -> f64 {
         self.viewport.scale_factor()
+    }
+
+    pub fn set_scale_factor(&mut self, scale_factor: f64) {
+        if scale_factor != self.scale_factor {
+            self.viewport_changed = true;
+            let logical_size = self.viewport.logical_size();
+            self.viewport = Viewport::with_physical_size(
+                Size {
+                    width: (logical_size.width as f64 * scale_factor) as u32,
+                    height: (logical_size.height as f64 * scale_factor) as u32,
+                },
+                self.scale_factor,
+            );
+        }
     }
 
     /// Returns the current cursor position of the [`State`].
@@ -853,7 +876,7 @@ where
 }
 
 /// Updates an [`Application`] by feeding it the provided messages, spawning any
-/// resulting [`Command`], and tracking its [`Subscription`].
+/// resulting [`Command`], and tracking its [`Subscription`]
 pub(crate) fn update<A: Application, E: Executor>(
     application: &mut A,
     cache: &mut user_interface::Cache,
@@ -917,7 +940,9 @@ fn run_command<A, E>(
     for action in command.actions() {
         match action {
             command::Action::Future(future) => {
-                runtime.spawn(Box::pin(future.map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e)))));
+                runtime.spawn(Box::pin(
+                    future.map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e))),
+                ));
             }
             command::Action::Clipboard(action) => match action {
                 clipboard::Action::Read(tag) => {
