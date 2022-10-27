@@ -8,10 +8,10 @@ use iced_native::{
 };
 use sctk::{
     output::OutputInfo,
-    reexports::client::backend::ObjectId,
+    reexports::client::{backend::ObjectId, protocol::wl_pointer::AxisSource},
     seat::{
         keyboard::{KeyEvent, Modifiers},
-        pointer::{PointerEvent, PointerEventKind},
+        pointer::{PointerEvent, PointerEventKind, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, AxisScroll},
         Capability,
     },
     shell::{
@@ -278,27 +278,21 @@ impl SctkEvent {
                     }))
                 }
                 PointerEventKind::Press {
-                    time,
+                    time: _,
                     button,
-                    serial,
-                } => Some(iced_native::Event::Mouse(mouse::Event::ButtonPressed(
-                    mouse::Button::Left,
-                ))), // TODO Ashley: conversion
+                    serial: _,
+                } => pointer_button_to_native(button).map(|b|iced_native::Event::Mouse(mouse::Event::ButtonPressed(b))), // TODO Ashley: conversion
                 PointerEventKind::Release {
-                    time,
+                    time: _,
                     button,
-                    serial,
-                } => Some(iced_native::Event::Mouse(mouse::Event::ButtonReleased(
-                    mouse::Button::Left,
-                ))), // TODO Ashley: conversion
+                    serial: _,
+                } => pointer_button_to_native(button).map(|b|iced_native::Event::Mouse(mouse::Event::ButtonReleased(b))), // TODO Ashley: conversion
                 PointerEventKind::Axis {
-                    time,
+                    time: _,
                     horizontal,
                     vertical,
                     source,
-                } => Some(iced_native::Event::Mouse(mouse::Event::WheelScrolled {
-                    delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                })), // TODO Ashley: conversion
+                } => pointer_axis_to_native(source, horizontal, vertical).map(|a| iced_native::Event::Mouse(mouse::Event::WheelScrolled { delta: a })), // TODO Ashley: conversion
             },
             SctkEvent::KeyboardEvent {
                 variant,
@@ -330,4 +324,22 @@ impl SctkEvent {
             } => None,
         }
     }
+}
+
+pub fn pointer_button_to_native(button: u32) -> Option<mouse::Button> {
+    match button {
+        BTN_LEFT => Some(mouse::Button::Left),
+        BTN_MIDDLE => Some(mouse::Button::Middle),
+        BTN_RIGHT => Some(mouse::Button::Right),
+        b => b.try_into().ok().map(|b| mouse::Button::Other(b))
+    }
+}
+
+pub fn pointer_axis_to_native(source: Option<AxisSource>, horizontal: AxisScroll, vertical: AxisScroll) -> Option<ScrollDelta> {
+    source.map(|source| {
+        match source {
+            AxisSource::Wheel | AxisSource::WheelTilt => ScrollDelta::Lines { x: horizontal.discrete as f32, y: vertical.discrete as f32 },
+            AxisSource::Finger | AxisSource::Continuous | _ => ScrollDelta::Pixels { x: horizontal.absolute as f32, y: vertical.absolute as f32 },
+        }
+    })
 }

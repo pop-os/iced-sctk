@@ -385,21 +385,14 @@ where
                             variant.position.1 as f32,
                         )),
                         PointerEventKind::Press {
-                            time,
-                            button,
-                            serial,
-                        } => todo!(),
+                            ..
+                        } |
                         PointerEventKind::Release {
-                            time,
-                            button,
-                            serial,
-                        } => todo!(),
+                            ..
+                        } |
                         PointerEventKind::Axis {
-                            time,
-                            horizontal,
-                            vertical,
-                            source,
-                        } => todo!(),
+                            ..
+                        } => {},
                     }
                 }
                 SctkEvent::KeyboardEvent {
