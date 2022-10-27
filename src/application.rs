@@ -473,7 +473,8 @@ where
                             filtered.push(events.remove(i));
                             // your code here
                         } else if should_filter.1 {
-                            filtered.push(events[i].clone())
+                            i += 1;
+                            filtered.push(events[i - 1].clone())
                         } else {
                             i += 1;
                         }
@@ -547,6 +548,7 @@ where
                         }
                     }
                 }
+                events.clear();
             }
             IcedSctkEvent::RedrawRequested(id) => {
                 if let Some((native_id, Some(egl_surface), Some(mut user_interface), Some(state))) =

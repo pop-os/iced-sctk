@@ -449,72 +449,13 @@ where
 
             for event in event_sink_back_buffer.drain(..) {
                 match event {
-                    SctkEvent::SeatEvent { variant, id } => {} // pretty sure i can ignore these for now and maybe remove them until we want iced to support multiseat...
-                    SctkEvent::PointerEvent {
-                        variant,
-                        ptr_id,
-                        seat_id,
-                    } => {
-                        sticky_exit_callback(
-                            IcedSctkEvent::SctkEvent(SctkEvent::PointerEvent {
-                                variant,
-                                ptr_id,
-                                seat_id,
-                            }),
-                            &self.state,
-                            &mut control_flow,
-                            &mut callback,
-                        );
-                    }
-                    SctkEvent::KeyboardEvent {
-                        variant,
-                        kbd_id,
-                        seat_id,
-                    } => sticky_exit_callback(
-                        IcedSctkEvent::SctkEvent(SctkEvent::KeyboardEvent {
-                            variant,
-                            kbd_id,
-                            seat_id,
-                        }),
+                    SctkEvent::Draw(id) => must_redraw.push(id),
+                    event => sticky_exit_callback(
+                        IcedSctkEvent::SctkEvent(event),
                         &self.state,
                         &mut control_flow,
                         &mut callback,
                     ),
-                    SctkEvent::WindowEvent { variant, id } => todo!(),
-                    SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
-                        crate::sctk_event::LayerSurfaceEventVariant::Created(_) => todo!(),
-                        crate::sctk_event::LayerSurfaceEventVariant::Done => todo!(),
-                        crate::sctk_event::LayerSurfaceEventVariant::Configure(configure) => {
-                            sticky_exit_callback(
-                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
-                                    variant: LayerSurfaceEventVariant::Configure(configure),
-                                    id,
-                                }),
-                                &self.state,
-                                &mut control_flow,
-                                &mut callback,
-                            );
-                        }
-                    },
-                    SctkEvent::PopupEvent {
-                        variant,
-                        toplevel_id,
-                        parent_id,
-                        id,
-                    } => todo!(),
-                    SctkEvent::NewOutput { id, info } => {
-                        // TODO forward output events so the user can create custom layer surfaces for them
-                    }
-                    SctkEvent::UpdateOutput { id, info } => {
-                        // TODO forward output events so the user can create custom layer surfaces for them
-                    }
-                    SctkEvent::RemovedOutput(_) => todo!(),
-                    SctkEvent::Draw(id) => must_redraw.push(id),
-                    SctkEvent::ScaleFactorChanged {
-                        factor,
-                        id,
-                        inner_size,
-                    } => todo!(),
                 }
                 // sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback);
             }
