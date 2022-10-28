@@ -210,7 +210,7 @@ where
             .anchor(anchor)
             .keyboard_interactivity(keyboard_interactivity)
             .margin(margin.top, margin.right, margin.bottom, margin.left)
-            .size(size)
+            .size((size.0.unwrap_or_default(), size.1.unwrap_or_default()))
             .namespace(namespace)
             .exclusive_zone(exclusive_zone)
             .map(
