@@ -24,14 +24,14 @@ use iced_native::{
 };
 
 use sctk::{
-    reexports::client::Proxy,
+    reexports::client::{Proxy, protocol::wl_surface::WlSurface},
     seat::{keyboard::Modifiers, pointer::PointerEventKind},
 };
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
 use glutin::{
-    api::egl::{self, context::PossiblyCurrentContext},
+    api::{egl::{self, context::PossiblyCurrentContext}, glx::context},
     prelude::*,
     surface::WindowSurface,
 };
@@ -196,7 +196,7 @@ where
     let mut event_loop =
         SctkEventLoop::<A::Message>::new(&settings).expect("Failed to initialize the event loop");
 
-    let (object_id, native_id, surface) = match &settings.surface {
+    let (object_id, native_id, wl_surface) = match &settings.surface {
         settings::InitialSurface::LayerSurface(l) => {
             let (native_id, surface) = event_loop.get_layer_surface(l.clone());
             (
@@ -223,11 +223,10 @@ where
         runtime.enter(|| A::new(flags))
     };
 
-    let (display, context, config, surface) = init_egl(&surface, 100, 100);
+    let (display, context, config, surface) = init_egl(&wl_surface, 100, 100);
 
     let context = context.make_current(&surface).unwrap();
-    let mut surfaces = HashMap::new();
-    surfaces.insert(native_id.inner(), surface);
+    let egl_surfaces = HashMap::from([(native_id.inner(), surface)]);
 
     #[allow(unsafe_code)]
     let (compositor, renderer) = unsafe {
@@ -246,7 +245,7 @@ where
         ev_proxy,
         debug,
         receiver,
-        surfaces,
+        egl_surfaces,
         surface_ids,
         display,
         context,
@@ -432,7 +431,11 @@ where
                         surface_ids.insert(id, SurfaceIdWrapper::LayerSurface(native_id));
                     }
                     LayerSurfaceEventVariant::Done => {
-                        // TODO Ashley: Can they be removed right away?
+                        if let Some(id) = surface_ids.remove(&id) {
+                            drop(egl_surfaces.remove(&id.inner()));
+                            interfaces.remove(&id.inner());
+                            states.remove(&id.inner());
+                        }
                     }
                     LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
                         if let Some(id) = surface_ids.get(&id) {
