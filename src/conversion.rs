@@ -1,10 +1,61 @@
-use iced_native::keyboard::{KeyCode, Modifiers};
+use iced_native::{keyboard::{KeyCode, self}, mouse::{self, ScrollDelta}};
+use sctk::{seat::{pointer::AxisScroll, keyboard::Modifiers}, reexports::client::protocol::wl_pointer::AxisSource};
 /// An error that occurred while running an application.
 #[derive(Debug, thiserror::Error)]
 #[error("the futures executor could not be created")]
 pub struct KeyCodeError(u32);
 
-// Pain :(
+
+pub fn pointer_button_to_native(button: u32) -> Option<mouse::Button> {
+    match button {
+        BTN_LEFT => Some(mouse::Button::Left),
+        BTN_MIDDLE => Some(mouse::Button::Middle),
+        BTN_RIGHT => Some(mouse::Button::Right),
+        b => b.try_into().ok().map(|b| mouse::Button::Other(b)),
+    }
+}
+
+pub fn pointer_axis_to_native(
+    source: Option<AxisSource>,
+    horizontal: AxisScroll,
+    vertical: AxisScroll,
+) -> Option<ScrollDelta> {
+    source.map(|source| match source {
+        AxisSource::Wheel | AxisSource::WheelTilt => ScrollDelta::Lines {
+            x: horizontal.discrete as f32,
+            y: vertical.discrete as f32,
+        },
+        AxisSource::Finger | AxisSource::Continuous | _ => ScrollDelta::Pixels {
+            x: horizontal.absolute as f32,
+            y: vertical.absolute as f32,
+        },
+    })
+}
+
+pub fn modifiers_to_native(mods: Modifiers) -> keyboard::Modifiers {
+    let mut native_mods = keyboard::Modifiers::empty();
+    if mods.alt {
+        native_mods = native_mods.union(keyboard::Modifiers::ALT);
+    }
+    if mods.ctrl {
+        native_mods = native_mods.union(keyboard::Modifiers::CTRL);
+    }
+    if mods.logo {
+        native_mods = native_mods.union(keyboard::Modifiers::LOGO);
+    }
+    if mods.shift {
+        native_mods = native_mods.union(keyboard::Modifiers::SHIFT);
+    }
+    // TODO Ashley: missing modifiers as platform specific additions?
+    // if mods.caps_lock {
+    // native_mods = native_mods.union(keyboard::Modifier);
+    // }
+    // if mods.num_lock {
+    //     native_mods = native_mods.union(keyboard::Modifiers::);
+    // }
+    native_mods
+}
+
 pub fn keysym_to_vkey(keysym: u32) -> Option<KeyCode> {
     use sctk::seat::keyboard::keysyms;
     match keysym {
@@ -192,22 +243,4 @@ pub fn keysym_to_vkey(keysym: u32) -> Option<KeyCode> {
         // Fallback.
         _ => None,
     }
-}
-
-pub fn modifiers(modifiers: sctk::seat::keyboard::Modifiers) -> Modifiers {
-    let mut iced_modifiers = if modifiers.alt {
-        Modifiers::ALT
-    } else {
-        Modifiers::empty()
-    };
-    if modifiers.shift {
-        iced_modifiers.insert(Modifiers::SHIFT);
-    }
-    if modifiers.alt {
-        iced_modifiers.insert(Modifiers::ALT);
-    }
-    if modifiers.logo {
-        iced_modifiers.insert(Modifiers::LOGO);
-    }
-    iced_modifiers
 }
