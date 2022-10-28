@@ -1,5 +1,5 @@
 use crate::{
-    egl::init_egl,
+    egl::{get_surface, init_egl},
     error::{self, Error},
     event_loop::{
         self,
@@ -417,7 +417,7 @@ where
                     }
                     crate::sctk_event::WindowEventVariant::WmCapabilities(_)
                     | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
-                    crate::sctk_event::WindowEventVariant::Configure(configure, first) => {
+                    crate::sctk_event::WindowEventVariant::Configure(configure, _, first) => {
                         if let Some(state) = surface_ids
                             .get(&id)
                             .and_then(|id| states.get_mut(&id.inner()))
@@ -434,11 +434,21 @@ where
                     LayerSurfaceEventVariant::Done => {
                         // TODO Ashley: Can they be removed right away?
                     }
-                    LayerSurfaceEventVariant::Configure(configure, first) => {
-                        if let Some(state) = surface_ids
+                    LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
+                        if let Some((id, state)) = surface_ids
                             .get(&id)
-                            .and_then(|id| states.get_mut(&id.inner()))
+                            .and_then(|id| states.get_mut(&id.inner()).map(|s| (id.inner(), s)))
                         {
+                            if first && !egl_surfaces.contains_key(&id) {
+                                let egl_surface = get_surface(
+                                    &egl_display,
+                                    &egl_config,
+                                    &wl_surface,
+                                    configure.new_size.0,
+                                    configure.new_size.1,
+                                );
+                                egl_surfaces.insert(id, egl_surface);
+                            }
                             state.set_logical_size(
                                 configure.new_size.0 as f64,
                                 configure.new_size.1 as f64,
@@ -462,7 +472,7 @@ where
                         }
                     }
                     PopupEventVariant::WmCapabilities(_) => {}
-                    PopupEventVariant::Configure(configure, first) => {
+                    PopupEventVariant::Configure(configure, _, first) => {
                         if let Some(state) = surface_ids
                             .get(&id)
                             .and_then(|id| states.get_mut(&id.inner()))

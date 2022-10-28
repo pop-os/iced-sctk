@@ -38,7 +38,7 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
         _conn: &sctk::reexports::client::Connection,
         _qh: &sctk::reexports::client::QueueHandle<Self>,
         layer: &sctk::shell::layer::LayerSurface,
-        configure: sctk::shell::layer::LayerSurfaceConfigure,
+        mut configure: sctk::shell::layer::LayerSurfaceConfigure,
         _serial: u32,
     ) {
         let layer = match self
@@ -50,22 +50,29 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
             None => return,
         };
         let id = layer.surface.wl_surface().id();
-        let w = if configure.new_size.0 > 0 {
+        configure.new_size.0 = if configure.new_size.0 > 0 {
             configure.new_size.0
         } else {
             layer.requested_size.0.unwrap_or(1)
         };
-        let h = if configure.new_size.1 > 0 {
+        configure.new_size.1 = if configure.new_size.1 > 0 {
             configure.new_size.1
         } else {
             layer.requested_size.1.unwrap_or(1)
         };
-        layer.current_size.replace(LogicalSize::new(w, h));
-        layer.surface.wl_surface().commit();
+        layer
+            .current_size
+            .replace(LogicalSize::new(configure.new_size.0, configure.new_size.1));
         let first = layer.last_configure.is_none();
         layer.last_configure.replace(configure.clone());
+        layer.surface.wl_surface().commit();
+
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
-            variant: LayerSurfaceEventVariant::Configure(configure, first),
+            variant: LayerSurfaceEventVariant::Configure(
+                configure,
+                layer.surface.wl_surface().clone(),
+                first,
+            ),
             id: id.clone(),
         });
         self.sctk_events.push(SctkEvent::Draw(id));

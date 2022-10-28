@@ -65,8 +65,8 @@ pub fn init_egl(
 }
 
 pub fn get_surface(
-    display: egl::display::Display,
-    config: glutin::api::egl::config::Config,
+    display: &egl::display::Display,
+    config: &glutin::api::egl::config::Config,
     surface: &wl_surface::WlSurface,
     width: u32,
     height: u32,

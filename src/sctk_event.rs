@@ -182,7 +182,7 @@ pub enum WindowEventVariant {
         height: u32,
     },
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:configure>
-    Configure(WindowConfigure, bool),
+    Configure(WindowConfigure, WlSurface, bool),
 }
 
 #[derive(Debug, Clone)]
@@ -193,7 +193,7 @@ pub enum PopupEventVariant {
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
     WmCapabilities(Vec<u32>),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:configure>
-    Configure(PopupConfigure, bool),
+    Configure(PopupConfigure, WlSurface, bool),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:repositioned>
     RepositionionedPopup {
         token: u32,
@@ -207,7 +207,7 @@ pub enum LayerSurfaceEventVariant {
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:closed>
     Done,
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:configure>
-    Configure(LayerSurfaceConfigure, bool),
+    Configure(LayerSurfaceConfigure, WlSurface, bool),
 }
 
 /// Describes the reason the event loop is resuming.
@@ -359,7 +359,7 @@ impl SctkEvent {
                 }),
                 WindowEventVariant::WmCapabilities(_) => None,
                 WindowEventVariant::ConfigureBounds { .. } => None,
-                WindowEventVariant::Configure(configure, _) => {
+                WindowEventVariant::Configure(configure, _, _) => {
                     if configure.is_resizing() {
                         let new_size = configure.new_size.unwrap();
                         surface_ids.get(&id).map(|id| {
