@@ -77,7 +77,7 @@ pub struct SctkWindow<T> {
 pub struct SctkLayerSurface<T> {
     pub(crate) id: iced_native::window::Id,
     pub(crate) surface: LayerSurface,
-    pub(crate) requested_size: Option<LogicalSize<u32>>,
+    pub(crate) requested_size: (Option<u32>, Option<u32>),
     pub(crate) current_size: Option<LogicalSize<u32>>,
     pub(crate) layer: Layer,
     pub(crate) anchor: Anchor,
@@ -223,7 +223,7 @@ where
         self.layer_surfaces.push(SctkLayerSurface {
             id,
             surface: layer_surface,
-            requested_size: None,
+            requested_size: (None, None),
             current_size: None,
             layer,
             // builder needs to be refactored such that these fields are accessible

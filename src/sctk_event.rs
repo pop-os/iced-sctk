@@ -14,7 +14,7 @@ use iced_native::{
 };
 use sctk::{
     output::OutputInfo,
-    reexports::client::backend::ObjectId,
+    reexports::client::{backend::ObjectId, protocol::wl_surface::WlSurface},
     seat::{
         keyboard::{KeyEvent, Modifiers},
         pointer::{PointerEvent, PointerEventKind},
@@ -171,7 +171,7 @@ pub enum KeyboardEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum WindowEventVariant {
-    Created((ObjectId, SurfaceId)),
+    Created(ObjectId, SurfaceId),
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:close>
     Close,
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
@@ -182,18 +182,18 @@ pub enum WindowEventVariant {
         height: u32,
     },
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:configure>
-    Configure(WindowConfigure),
+    Configure(WindowConfigure, bool),
 }
 
 #[derive(Debug, Clone)]
 pub enum PopupEventVariant {
-    Created((ObjectId, SurfaceId)),
+    Created(ObjectId, SurfaceId),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:popup_done>
     Done,
     /// <https://wayland.app/protocols/xdg-shell#xdg_toplevel:event:wm_capabilities>
     WmCapabilities(Vec<u32>),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:configure>
-    Configure(PopupConfigure),
+    Configure(PopupConfigure, bool),
     /// <https://wayland.app/protocols/xdg-shell#xdg_popup:event:repositioned>
     RepositionionedPopup {
         token: u32,
@@ -203,11 +203,11 @@ pub enum PopupEventVariant {
 #[derive(Debug, Clone)]
 pub enum LayerSurfaceEventVariant {
     /// sent after creation of the layer surface
-    Created((ObjectId, SurfaceId)),
+    Created(ObjectId, SurfaceId),
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:closed>
     Done,
     /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:event:configure>
-    Configure(LayerSurfaceConfigure),
+    Configure(LayerSurfaceConfigure, bool),
 }
 
 /// Describes the reason the event loop is resuming.
@@ -250,11 +250,14 @@ pub struct SurfaceUserRequest {
     pub refresh_frame: bool,
 }
 
-// The window update comming from the compositor.
+// The window update coming from the compositor.
 #[derive(Default, Debug, Clone)]
 pub struct SurfaceCompositorUpdate {
     /// New window configure.
     pub configure: Option<WindowConfigure>,
+
+    /// first
+    pub first: bool,
 
     /// New scale factor.
     pub scale_factor: Option<i32>,
@@ -350,13 +353,13 @@ impl SctkEvent {
             },
             SctkEvent::WindowEvent { variant, id } => match variant {
                 // TODO Ashley: platform specific events for window
-                WindowEventVariant::Created(_) => None,
+                WindowEventVariant::Created(..) => None,
                 WindowEventVariant::Close => surface_ids.get(&id).map(|id| {
                     iced_native::Event::Window(id.inner(), window::Event::CloseRequested)
                 }),
                 WindowEventVariant::WmCapabilities(_) => None,
                 WindowEventVariant::ConfigureBounds { .. } => None,
-                WindowEventVariant::Configure(configure) => {
+                WindowEventVariant::Configure(configure, _) => {
                     if configure.is_resizing() {
                         let new_size = configure.new_size.unwrap();
                         surface_ids.get(&id).map(|id| {

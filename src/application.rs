@@ -30,7 +30,11 @@ use sctk::{
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
-use glutin::{api::egl::context::PossiblyCurrentContext, prelude::*, surface::WindowSurface};
+use glutin::{
+    api::egl::{self, context::PossiblyCurrentContext},
+    prelude::*,
+    surface::WindowSurface,
+};
 use iced_graphics::{compositor, renderer, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
@@ -219,9 +223,9 @@ where
         runtime.enter(|| A::new(flags))
     };
 
-    let (display, context, _config, surface) = init_egl(&surface, 100, 100);
+    let (display, context, config, surface) = init_egl(&surface, 100, 100);
 
-    let gl_context = context.make_current(&surface).unwrap();
+    let context = context.make_current(&surface).unwrap();
     let mut surfaces = HashMap::new();
     surfaces.insert(native_id.inner(), surface);
 
@@ -244,7 +248,9 @@ where
         receiver,
         surfaces,
         surface_ids,
-        gl_context,
+        display,
+        context,
+        config,
         init_command,
         exit_on_close_request,
         if is_layer_surface {
@@ -282,9 +288,11 @@ async fn run_instance<A, E, C>(
     mut ev_proxy: proxy::Proxy<Event<A::Message>>,
     mut debug: Debug,
     mut receiver: mpsc::UnboundedReceiver<IcedSctkEvent<A::Message>>,
-    mut surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
+    mut egl_surfaces: HashMap<SurfaceId, glutin::api::egl::surface::Surface<WindowSurface>>,
     mut surface_ids: HashMap<ObjectId, SurfaceIdWrapper>,
-    mut context: PossiblyCurrentContext,
+    mut egl_display: egl::display::Display,
+    mut egl_context: egl::context::PossiblyCurrentContext,
+    mut egl_config: glutin::api::egl::config::Config,
     init_command: Command<A::Message>,
     exit_on_close_request: bool,
     init_id: SurfaceIdWrapper,
@@ -401,15 +409,15 @@ where
                     }
                 },
                 SctkEvent::WindowEvent { variant, id } => match variant {
-                    crate::sctk_event::WindowEventVariant::Created((object_id, native_id)) => {
-                        surface_ids.insert(object_id, SurfaceIdWrapper::Window(native_id));
+                    crate::sctk_event::WindowEventVariant::Created(id, native_id) => {
+                        surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
                     }
                     crate::sctk_event::WindowEventVariant::Close => {
                         // TODO Ashley: Can they be removed right away?
                     }
                     crate::sctk_event::WindowEventVariant::WmCapabilities(_)
                     | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
-                    crate::sctk_event::WindowEventVariant::Configure(configure) => {
+                    crate::sctk_event::WindowEventVariant::Configure(configure, first) => {
                         if let Some(state) = surface_ids
                             .get(&id)
                             .and_then(|id| states.get_mut(&id.inner()))
@@ -420,13 +428,13 @@ where
                     }
                 },
                 SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
-                    LayerSurfaceEventVariant::Created((object_id, native_id)) => {
-                        surface_ids.insert(object_id, SurfaceIdWrapper::LayerSurface(native_id));
+                    LayerSurfaceEventVariant::Created(id, native_id) => {
+                        surface_ids.insert(id, SurfaceIdWrapper::LayerSurface(native_id));
                     }
                     LayerSurfaceEventVariant::Done => {
                         // TODO Ashley: Can they be removed right away?
                     }
-                    LayerSurfaceEventVariant::Configure(configure) => {
+                    LayerSurfaceEventVariant::Configure(configure, first) => {
                         if let Some(state) = surface_ids
                             .get(&id)
                             .and_then(|id| states.get_mut(&id.inner()))
@@ -444,17 +452,17 @@ where
                     parent_id: _,
                     id,
                 } => match variant {
-                    PopupEventVariant::Created((_, native_id)) => {
+                    PopupEventVariant::Created(_, native_id) => {
                         surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
                     }
                     PopupEventVariant::Done => {
                         // TODO Ashley: Can they be removed right away?
                         if let Some(id) = surface_ids.get(&id) {
-                            surfaces.remove(&id.inner());
+                            egl_surfaces.remove(&id.inner());
                         }
                     }
                     PopupEventVariant::WmCapabilities(_) => {}
-                    PopupEventVariant::Configure(configure) => {
+                    PopupEventVariant::Configure(configure, first) => {
                         if let Some(state) = surface_ids
                             .get(&id)
                             .and_then(|id| states.get_mut(&id.inner()))
@@ -597,7 +605,7 @@ where
             IcedSctkEvent::RedrawRequested(id) => {
                 if let Some((native_id, Some(egl_surface), Some(mut user_interface), Some(state))) =
                     surface_ids.get(&id).map(|id| {
-                        let surface = surfaces.get_mut(&id.inner());
+                        let surface = egl_surfaces.get_mut(&id.inner());
                         let interface = interfaces.remove(&id.inner());
                         let state = states.get_mut(&id.inner());
                         (*id, surface, interface, state)
@@ -606,7 +614,7 @@ where
                     debug.render_started();
 
                     if current_context_window != native_id.inner() {
-                        if context.make_current(egl_surface).is_ok() {
+                        if egl_context.make_current(egl_surface).is_ok() {
                             current_context_window = native_id.inner();
                         } else {
                             interfaces.insert(native_id.inner(), user_interface);
@@ -635,7 +643,7 @@ where
                         ev_proxy.send_event(Event::SetCursor(new_mouse_interaction));
 
                         egl_surface.resize(
-                            &context,
+                            &egl_context,
                             NonZeroU32::new(physical_size.width).unwrap(),
                             NonZeroU32::new(physical_size.height).unwrap(),
                         );
@@ -653,7 +661,7 @@ where
                         state.background_color(),
                         &debug.overlay(),
                     );
-                    let _ = egl_surface.swap_buffers(&context);
+                    let _ = egl_surface.swap_buffers(&egl_context);
 
                     debug.render_finished();
                 }

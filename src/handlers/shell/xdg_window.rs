@@ -38,14 +38,16 @@ impl<T: Debug> WindowHandler for SctkState<T> {
     ) {
         let window = match self
             .windows
-            .iter()
+            .iter_mut()
             .find(|w| w.window.wl_surface() == window.wl_surface())
         {
             Some(w) => w,
             None => return,
         };
+        let first = window.last_configure.is_none();
+        window.last_configure.replace(configure.clone());
         self.sctk_events.push(SctkEvent::WindowEvent {
-            variant: WindowEventVariant::Configure(configure),
+            variant: WindowEventVariant::Configure(configure, first),
             id: window.window.wl_surface().id(),
         })
     }

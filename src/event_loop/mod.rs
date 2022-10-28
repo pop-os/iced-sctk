@@ -11,6 +11,7 @@ use std::{
 
 use crate::{
     application::Event,
+    commands::layer_surface,
     dpi::LogicalSize,
     sctk_event::{
         IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceCompositorUpdate,
@@ -19,7 +20,10 @@ use crate::{
     settings,
 };
 
-use iced_native::command::platform_specific::{self, wayland::layer_surface::IcedLayerSurface};
+use iced_native::command::platform_specific::{
+    self,
+    wayland::layer_surface::{IcedLayerSurface, IcedMargin},
+};
 use sctk::{
     compositor::CompositorState,
     event_loop::WaylandSource,
@@ -79,10 +83,10 @@ impl<T> SctkEventLoop<T>
 where
     T: 'static + Debug,
 {
-    pub(crate) fn new<F: Sized>(settings: &settings::Settings<F>) -> Result<Self, ConnectError> {
+    pub(crate) fn new<F: Sized>(_settings: &settings::Settings<F>) -> Result<Self, ConnectError> {
         let connection = Connection::connect_to_env()?;
-        let display = connection.display();
-        let (globals, mut event_queue) = registry_queue_init(&connection).unwrap();
+        let _display = connection.display();
+        let (globals, event_queue) = registry_queue_init(&connection).unwrap();
         let event_loop = calloop::EventLoop::<SctkState<T>>::try_new().unwrap();
         let loop_handle = event_loop.handle();
 
@@ -90,8 +94,9 @@ where
         let registry_state = RegistryState::new(&connection, &qh);
 
         let (ping, ping_source) = calloop::ping::make_ping().unwrap();
+        // TODO
         loop_handle
-            .insert_source(ping_source, |_, _, state| {
+            .insert_source(ping_source, |_, _, _state| {
                 // Drain events here as well to account for application doing batch event processing
                 // on RedrawEventsCleared.
                 // shim::handle_window_requests(state);
@@ -186,15 +191,7 @@ where
             &mut control_flow,
         );
 
-        let mut window_compositor_updates: Vec<(ObjectId, SurfaceCompositorUpdate)> = Vec::new();
         let mut surface_user_requests: Vec<(ObjectId, SurfaceUserRequest)> = Vec::new();
-
-        let mut popup_compositor_updates: Vec<(ObjectId, SurfaceCompositorUpdate)> = Vec::new();
-        let mut popup_user_requests: Vec<(ObjectId, SurfaceUserRequest)> = Vec::new();
-
-        let mut layer_surface_compositor_updates: Vec<(ObjectId, SurfaceCompositorUpdate)> =
-            Vec::new();
-        let mut layer_surface_user_requests: Vec<(ObjectId, SurfaceUserRequest)> = Vec::new();
 
         let mut event_sink_back_buffer = Vec::new();
 
@@ -307,138 +304,6 @@ where
                 }
             }
 
-            self.handle_pending_user_events(&mut control_flow, &mut callback);
-
-            // Process 'new' pending updates from compositor.
-            window_compositor_updates.clear();
-            window_compositor_updates.extend(
-                self.state
-                    .window_compositor_updates
-                    .iter_mut()
-                    .map(|(wid, window_update)| (wid.clone(), mem::take(window_update))),
-            );
-
-            for (window_id, window_compositor_update) in window_compositor_updates.iter_mut() {
-                if let Some(scale_factor) = window_compositor_update.scale_factor.map(|f| f as f64)
-                {
-                    let (physical_size, configure) = {
-                        let window_handle = self
-                            .state
-                            .windows
-                            .iter_mut()
-                            .find(|w| w.window.wl_surface().id() == *window_id)
-                            .unwrap();
-                        let mut size = window_handle.current_size.as_mut().unwrap();
-
-                        // Update the new logical size if it was changed.
-                        let configure = window_compositor_update.configure.as_ref();
-                        let window_size = configure
-                            .and_then(|c| (c.new_size))
-                            .unwrap_or((size.width, size.height));
-                        *size = LogicalSize::new(window_size.0, window_size.1);
-
-                        (
-                            LogicalSize::new(window_size.0, window_size.1)
-                                .to_physical(scale_factor),
-                            configure.unwrap(),
-                        )
-                    };
-
-                    sticky_exit_callback(
-                        IcedSctkEvent::SctkEvent(SctkEvent::ScaleFactorChanged {
-                            id: window_id.clone(),
-                            factor: scale_factor,
-                            inner_size: physical_size,
-                        }),
-                        &self.state,
-                        &mut control_flow,
-                        &mut callback,
-                    );
-
-                    // We don't update size on a window handle since we'll do that later
-                    // when handling size update.
-                    let new_logical_size = physical_size.to_logical::<u32>(scale_factor);
-                    window_compositor_update.configure = Some(configure.clone());
-                }
-
-                if let Some(configure) = window_compositor_update.configure.take() {
-                    let physical_size = {
-                        let window_handle = self
-                            .state
-                            .windows
-                            .iter_mut()
-                            .find(|w| w.window.wl_surface().id() == *window_id)
-                            .unwrap();
-                        let mut window_size = window_handle.current_size.as_mut().unwrap();
-                        let size = configure
-                            .new_size
-                            .map(|c| LogicalSize {
-                                width: c.0,
-                                height: c.1,
-                            })
-                            .unwrap_or(*window_size);
-                        // Always issue resize event on scale factor change.
-                        let physical_size = if window_compositor_update.scale_factor.is_none()
-                            && *window_size == size
-                        {
-                            // The size hasn't changed, don't inform downstream about that.
-                            None
-                        } else {
-                            *window_size = size;
-                            let physical_size = size.to_physical::<u32>(
-                                window_compositor_update.scale_factor.unwrap() as f64,
-                            );
-                            Some(physical_size)
-                        };
-
-                        // We still perform all of those resize related logic even if the size
-                        // hasn't changed, since GNOME relies on `set_geometry` calls after
-                        // configures.
-                        window_handle.window.xdg_surface().set_window_geometry(
-                            0,
-                            0,
-                            size.width as i32,
-                            size.height as i32,
-                        );
-                        window_handle.window.wl_surface().commit();
-
-                        // Mark that refresh isn't required, since we've done it right now.
-                        self.state
-                            .window_user_requests
-                            .get_mut(window_id)
-                            .unwrap()
-                            .refresh_frame = false;
-
-                        physical_size
-                    };
-
-                    if let Some(physical_size) = physical_size {
-                        sticky_exit_callback(
-                            IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent {
-                                variant: WindowEventVariant::Configure(configure),
-                                id: window_id.clone(),
-                            }),
-                            &self.state,
-                            &mut control_flow,
-                            &mut callback,
-                        );
-                    }
-                }
-
-                // If the close is requested, send it here.
-                if window_compositor_update.close_window {
-                    sticky_exit_callback(
-                        IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent {
-                            variant: WindowEventVariant::Close,
-                            id: window_id.clone(),
-                        }),
-                        &self.state,
-                        &mut control_flow,
-                        &mut callback,
-                    );
-                }
-            }
-
             // The purpose of the back buffer and that swap is to not hold borrow_mut when
             // we're doing callback to the user, since we can double borrow if the user decides
             // to create a window in one of those callbacks.
@@ -457,7 +322,102 @@ where
                         &mut callback,
                     ),
                 }
-                // sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback);
+            }
+
+            // handle events indirectly via callback to the user.
+            let (sctk_events, user_events): (Vec<_>, Vec<_>) = self
+                .state
+                .pending_user_events
+                .drain(..)
+                .partition(|e| matches!(e, Event::SctkEvent(_)));
+            for event in sctk_events.into_iter().chain(user_events.into_iter()) {
+                match event {
+                    Event::SctkEvent(event) => {
+                        sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback)
+                    }
+                    Event::LayerSurface(action) => match action {
+                        platform_specific::wayland::layer_surface::Action::LayerSurface {
+                            builder,
+                            _phantom,
+                        } => {
+                            let (id, wl_surface) = self.state.get_layer_surface(builder);
+                            let object_id = wl_surface.id();
+                            sticky_exit_callback(
+                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
+                                    variant: LayerSurfaceEventVariant::Created(object_id.clone(), id),
+                                    id: object_id,
+                                }),
+                                &self.state,
+                                &mut control_flow,
+                                &mut callback,
+                            );
+                        }
+                        platform_specific::wayland::layer_surface::Action::Size {
+                            id,
+                            width,
+                            height,
+                        } => {
+                            if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
+                                layer_surface.requested_size = (width, height);
+                                layer_surface.surface.set_size(width.unwrap_or_default(), height.unwrap_or_default())
+                            }
+                        },
+                        platform_specific::wayland::layer_surface::Action::Destroy(id) => {
+                            if let Some(i) = self.state.layer_surfaces.iter().position(|l| &l.id == &id) {
+                                let l = self.state.layer_surfaces.remove(i);
+                                sticky_exit_callback(
+                                    IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
+                                        variant: LayerSurfaceEventVariant::Done,
+                                        id: l.surface.wl_surface().id(),
+                                    }),
+                                    &self.state,
+                                    &mut control_flow,
+                                    &mut callback,
+                                );
+                            }
+                        },
+                        platform_specific::wayland::layer_surface::Action::Anchor { id, anchor } => {
+                            if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
+                                layer_surface.anchor = anchor;
+                                layer_surface.surface.set_anchor(anchor);
+                            }
+                        }
+                        platform_specific::wayland::layer_surface::Action::ExclusiveZone {
+                            id,
+                            exclusive_zone,
+                        } => {
+                            if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
+                                layer_surface.exclusive_zone = exclusive_zone;
+                                layer_surface.surface.set_exclusive_zone(exclusive_zone);
+                            }
+                        },
+                        platform_specific::wayland::layer_surface::Action::Margin {
+                            id,
+                            margin,
+                        } => {
+                            if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
+                                layer_surface.margin = margin;
+                                layer_surface.surface.set_margin(margin.top, margin.right, margin.bottom, margin.left);
+                            }
+                        },
+                        platform_specific::wayland::layer_surface::Action::KeyboardInteractivity { id, keyboard_interactivity } => {
+                            if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
+                                layer_surface.keyboard_interactivity = keyboard_interactivity;
+                                layer_surface.surface.set_keyboard_interactivity(keyboard_interactivity);
+                            }
+                        },
+                        platform_specific::wayland::layer_surface::Action::Layer { id, layer } => {
+                            if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
+                                layer_surface.layer = layer;
+                                layer_surface.surface.set_layer(layer);
+                            }
+                        },
+                    },
+                    Event::SetCursor(_) => {
+                        // TODO set cursor after cursor theming PR is merged
+                        // https://github.com/Smithay/client-toolkit/pull/306
+                    }
+                }
             }
 
             // Send events cleared.
@@ -471,8 +431,6 @@ where
             // Apply user requests, so every event required resize and latter surface commit will
             // be applied right before drawing. This will also ensure that every `RedrawRequested`
             // event will be delivered in time.
-            // shim::handle_window_requests(self.state);
-            // TODO
             // Process 'new' pending updates from compositor.
             surface_user_requests.clear();
             surface_user_requests.extend(
@@ -542,41 +500,6 @@ where
 
         callback(IcedSctkEvent::LoopDestroyed, &self.state, &mut control_flow);
         exit_code
-    }
-
-    fn handle_pending_user_events<F: FnMut(IcedSctkEvent<T>, &SctkState<T>, &mut ControlFlow)>(
-        &mut self,
-        control_flow: &mut ControlFlow,
-        callback: &mut F,
-    ) {
-        // Handle pending user events one more time, just in case anything new has been requested in response to the sctk events
-        // user events indirectly via callback to the user.
-        let user_events = self.state.pending_user_events.drain(..).collect::<Vec<_>>();
-        for user_event in user_events {
-            match user_event {
-                Event::SctkEvent(event) => {
-                    sticky_exit_callback(event, &self.state, control_flow, callback)
-                }
-                Event::LayerSurface(
-                    platform_specific::wayland::layer_surface::Action::LayerSurface {
-                        builder, ..
-                    },
-                ) => {
-                    todo!()
-                }
-                Event::LayerSurface(platform_specific::wayland::layer_surface::Action::Size {
-                    id,
-                    width,
-                    height,
-                }) => {
-                    todo!()
-                }
-                Event::SetCursor(_) => {
-                    // TODO set cursor after cursor theming PR is merged
-                    // https://github.com/Smithay/client-toolkit/pull/306
-                }
-            }
-        }
     }
 }
 

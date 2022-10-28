@@ -21,8 +21,10 @@ impl<T: Debug> PopupHandler for SctkState<T> {
             Some(p) => p,
             None => return,
         };
+        let first = sctk_popup.last_configure.is_none();
+        sctk_popup.last_configure.replace(config.clone());
         self.sctk_events.push(SctkEvent::PopupEvent {
-            variant: PopupEventVariant::Configure(config),
+            variant: PopupEventVariant::Configure(config, first),
             id: popup.wl_surface().id(),
             toplevel_id: sctk_popup.toplevel.id(),
             parent_id: match &sctk_popup.parent {
