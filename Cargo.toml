@@ -25,23 +25,23 @@ wayland-backend = {version = "=0.1.0-beta.12", features = ["client_system"]}
 
 [dependencies.iced_native]
 version = "0.5"
-# git = "https://github.com/wash2/iced"
-# branch = "sctk"
+git = "https://github.com/pop-os/iced"
+branch = "sctk"
 features = ["sctk"]
-path = "../../cosmic-iced/native"
+# path = "../../cosmic-iced/native"
 
 [dependencies.iced_graphics]
 version = "0.3"
-# git = "https://github.com/wash2/iced"
-# branch = "sctk"
-path = "../../cosmic-iced/graphics"
+git = "https://github.com/pop-os/iced"
+branch = "sctk"
+# path = "../../cosmic-iced/graphics"
 features = ["opengl"]
 
 [dependencies.iced_futures]
 version = "0.4"
-# git = "https://github.com/wash2/iced"
-# branch = "sctk"
-path = "../../cosmic-iced/futures"
+git = "https://github.com/pop-os/iced"
+branch = "sctk"
+# path = "../../cosmic-iced/futures"
 
 [dependencies.sysinfo]
 version = "0.26"
