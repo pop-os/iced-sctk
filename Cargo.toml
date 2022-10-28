@@ -21,27 +21,27 @@ glow = "0.11.2"
 raw-window-handle = "0.5.0"
 enum-repr = "0.2.6"
 futures = "0.3"
-wayland-backend = {version = "=0.1.0-beta.10", features = ["client_system"]}
+wayland-backend = {version = "=0.1.0-beta.12", features = ["client_system"]}
 
 [dependencies.iced_native]
 version = "0.5"
 # git = "https://github.com/wash2/iced"
 # branch = "sctk"
 features = ["sctk"]
-path = "../iced/native"
+path = "../../cosmic-iced/native"
 
 [dependencies.iced_graphics]
 version = "0.3"
 # git = "https://github.com/wash2/iced"
 # branch = "sctk"
-path = "../iced/graphics"
+path = "../../cosmic-iced/graphics"
 features = ["opengl"]
 
 [dependencies.iced_futures]
 version = "0.4"
 # git = "https://github.com/wash2/iced"
 # branch = "sctk"
-path = "../iced/futures"
+path = "../../cosmic-iced/futures"
 
 [dependencies.sysinfo]
 version = "0.26"

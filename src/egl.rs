@@ -28,7 +28,7 @@ pub fn init_egl(
     // Initialize the EGL Wayland platform
     //
     // SAFETY: The connection is valid.
-    let display = unsafe { egl::display::Display::from_raw(display_handle) }
+    let display = unsafe { egl::display::Display::new(display_handle) }
         .expect("Failed to initialize Wayland EGL platform");
 
     // Find a suitable config for the window.

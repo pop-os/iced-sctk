@@ -219,7 +219,7 @@ where
         runtime.enter(|| A::new(flags))
     };
 
-    let (_display, context, _config, surface) = init_egl(&surface, 100, 100);
+    let (display, context, _config, surface) = init_egl(&surface, 100, 100);
 
     let gl_context = context.make_current(&surface).unwrap();
     let mut surfaces = HashMap::new();
@@ -229,7 +229,7 @@ where
     let (compositor, renderer) = unsafe {
         C::new(compositor_settings, |name| {
             let name = CString::new(name).unwrap();
-            gl_context.get_proc_address(name.as_c_str())
+            display.get_proc_address(name.as_c_str())
         })?
     };
     let (mut sender, receiver) = mpsc::unbounded::<IcedSctkEvent<A::Message>>();
