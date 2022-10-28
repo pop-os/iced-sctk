@@ -435,11 +435,8 @@ where
                         // TODO Ashley: Can they be removed right away?
                     }
                     LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
-                        if let Some((id, state)) = surface_ids
-                            .get(&id)
-                            .and_then(|id| states.get_mut(&id.inner()).map(|s| (id.inner(), s)))
-                        {
-                            if first && !egl_surfaces.contains_key(&id) {
+                        if let Some(id) = surface_ids.get(&id) {
+                            if first && !egl_surfaces.contains_key(&id.inner()) {
                                 let egl_surface = get_surface(
                                     &egl_display,
                                     &egl_config,
@@ -447,12 +444,26 @@ where
                                     configure.new_size.0,
                                     configure.new_size.1,
                                 );
-                                egl_surfaces.insert(id, egl_surface);
+                                egl_surfaces.insert(id.inner(), egl_surface);
+                                let state = State::new(&application, *id);
+
+                                let user_interface = build_user_interface(
+                                    &application,
+                                    user_interface::Cache::default(),
+                                    &mut renderer,
+                                    state.logical_size(),
+                                    &mut debug,
+                                    *id,
+                                );
+                                states.insert(id.inner(), state);
+                                interfaces.insert(id.inner(), user_interface);
                             }
-                            state.set_logical_size(
-                                configure.new_size.0 as f64,
-                                configure.new_size.1 as f64,
-                            );
+                            if let Some(state) = states.get_mut(&id.inner()) {
+                                state.set_logical_size(
+                                    configure.new_size.0 as f64,
+                                    configure.new_size.1 as f64,
+                                );
+                            }
                         }
                     }
                 },
@@ -507,6 +518,7 @@ where
                 }
             },
             IcedSctkEvent::MainEventsCleared => {
+                let mut needs_redraw = false;
                 for (object_id, native_id) in &surface_ids {
                     // returns (remove, copy)
                     let filter_events = |e: &SctkEvent| match e {
@@ -565,10 +577,14 @@ where
                     for event in native_events.into_iter().zip(statuses.into_iter()) {
                         runtime.broadcast(event);
                     }
-
                     if !messages.is_empty()
                         || matches!(interface_state, user_interface::State::Outdated)
                     {
+                        needs_redraw = true;
+                    }
+                }
+                if needs_redraw {
+                    for (object_id, _) in &surface_ids {
                         let state = &mut states.get_mut(&id).unwrap();
                         let pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
                             .drain()
