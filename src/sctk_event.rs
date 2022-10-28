@@ -1,15 +1,20 @@
 use std::{collections::HashMap, time::Instant};
 
-use crate::{application::SurfaceIdWrapper, conversion::{keysym_to_vkey, modifiers_to_native, pointer_axis_to_native, pointer_button_to_native}, dpi::PhysicalSize};
+use crate::{
+    application::SurfaceIdWrapper,
+    conversion::{
+        keysym_to_vkey, modifiers_to_native, pointer_axis_to_native, pointer_button_to_native,
+    },
+    dpi::{LogicalSize, PhysicalSize},
+};
 use iced_graphics::Point;
 use iced_native::{
-    keyboard,
-    mouse,
+    keyboard, mouse,
     window::{self, Id as SurfaceId},
 };
 use sctk::{
     output::OutputInfo,
-    reexports::client::{backend::ObjectId},
+    reexports::client::backend::ObjectId,
     seat::{
         keyboard::{KeyEvent, Modifiers},
         pointer::{PointerEvent, PointerEventKind},
@@ -343,7 +348,31 @@ impl SctkEvent {
                     ))
                 }
             },
-            SctkEvent::WindowEvent { variant, id } => None,
+            SctkEvent::WindowEvent { variant, id } => match variant {
+                // TODO Ashley: platform specific events for window
+                WindowEventVariant::Created(_) => None,
+                WindowEventVariant::Close => surface_ids.get(&id).map(|id| {
+                    iced_native::Event::Window(id.inner(), window::Event::CloseRequested)
+                }),
+                WindowEventVariant::WmCapabilities(_) => None,
+                WindowEventVariant::ConfigureBounds { .. } => None,
+                WindowEventVariant::Configure(configure) => {
+                    if configure.is_resizing() {
+                        let new_size = configure.new_size.unwrap();
+                        surface_ids.get(&id).map(|id| {
+                            iced_native::Event::Window(
+                                id.inner(),
+                                window::Event::Resized {
+                                    width: new_size.0,
+                                    height: new_size.1,
+                                },
+                            )
+                        })
+                    } else {
+                        None
+                    }
+                }
+            },
             SctkEvent::LayerSurfaceEvent { variant, id } => None,
             SctkEvent::PopupEvent {
                 variant,

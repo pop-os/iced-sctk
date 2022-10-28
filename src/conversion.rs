@@ -1,10 +1,15 @@
-use iced_native::{keyboard::{KeyCode, self}, mouse::{self, ScrollDelta}};
-use sctk::{seat::{pointer::AxisScroll, keyboard::Modifiers}, reexports::client::protocol::wl_pointer::AxisSource};
+use iced_native::{
+    keyboard::{self, KeyCode},
+    mouse::{self, ScrollDelta},
+};
+use sctk::{
+    reexports::client::protocol::wl_pointer::AxisSource,
+    seat::{keyboard::Modifiers, pointer::AxisScroll},
+};
 /// An error that occurred while running an application.
 #[derive(Debug, thiserror::Error)]
 #[error("the futures executor could not be created")]
 pub struct KeyCodeError(u32);
-
 
 pub fn pointer_button_to_native(button: u32) -> Option<mouse::Button> {
     match button {

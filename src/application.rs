@@ -8,7 +8,9 @@ use crate::{
         state::{SctkState, SctkWindow},
         SctkEventLoop,
     },
-    sctk_event::{IcedSctkEvent, KeyboardEventVariant, LayerSurfaceEventVariant, SctkEvent},
+    sctk_event::{
+        IcedSctkEvent, KeyboardEventVariant, LayerSurfaceEventVariant, PopupEventVariant, SctkEvent,
+    },
     settings, Command, Debug, Executor, Runtime, Size, Subscription,
 };
 use futures::{channel::mpsc, task, Future, FutureExt, StreamExt};
@@ -398,10 +400,32 @@ where
                         }
                     }
                 },
-                SctkEvent::WindowEvent { variant, id } => todo!(),
+                SctkEvent::WindowEvent { variant, id } => match variant {
+                    crate::sctk_event::WindowEventVariant::Created((object_id, native_id)) => {
+                        surface_ids.insert(object_id, SurfaceIdWrapper::Window(native_id));
+                    }
+                    crate::sctk_event::WindowEventVariant::Close => {
+                        // TODO Ashley: Can they be removed right away?
+                    }
+                    crate::sctk_event::WindowEventVariant::WmCapabilities(_)
+                    | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
+                    crate::sctk_event::WindowEventVariant::Configure(configure) => {
+                        if let Some(state) = surface_ids
+                            .get(&id)
+                            .and_then(|id| states.get_mut(&id.inner()))
+                        {
+                            let new_size = configure.new_size.unwrap();
+                            state.set_logical_size(new_size.0 as f64, new_size.1 as f64);
+                        }
+                    }
+                },
                 SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
-                    LayerSurfaceEventVariant::Created(_) => todo!(),
-                    LayerSurfaceEventVariant::Done => todo!(),
+                    LayerSurfaceEventVariant::Created((object_id, native_id)) => {
+                        surface_ids.insert(object_id, SurfaceIdWrapper::LayerSurface(native_id));
+                    }
+                    LayerSurfaceEventVariant::Done => {
+                        // TODO Ashley: Can they be removed right away?
+                    }
                     LayerSurfaceEventVariant::Configure(configure) => {
                         if let Some(state) = surface_ids
                             .get(&id)
@@ -416,10 +440,30 @@ where
                 },
                 SctkEvent::PopupEvent {
                     variant,
-                    toplevel_id,
-                    parent_id,
+                    toplevel_id: _,
+                    parent_id: _,
                     id,
-                } => todo!(),
+                } => match variant {
+                    PopupEventVariant::Created((_, native_id)) => {
+                        surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
+                    }
+                    PopupEventVariant::Done => {
+                        // TODO Ashley: Can they be removed right away?
+                        if let Some(id) = surface_ids.get(&id) {
+                            surfaces.remove(&id.inner());
+                        }
+                    }
+                    PopupEventVariant::WmCapabilities(_) => {}
+                    PopupEventVariant::Configure(configure) => {
+                        if let Some(state) = surface_ids
+                            .get(&id)
+                            .and_then(|id| states.get_mut(&id.inner()))
+                        {
+                            state.set_logical_size(configure.width as f64, configure.height as f64);
+                        }
+                    }
+                    PopupEventVariant::RepositionionedPopup { .. } => {}
+                },
                 // TODO forward these events to an application which requests them?
                 SctkEvent::NewOutput { id, info } => {
                     events.push(SctkEvent::NewOutput { id, info });
