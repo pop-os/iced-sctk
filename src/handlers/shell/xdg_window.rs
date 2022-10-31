@@ -2,7 +2,7 @@ use crate::{
     event_loop::state::SctkState,
     sctk_event::{SctkEvent, WindowEventVariant},
 };
-use sctk::{delegate_xdg_window, reexports::client::Proxy, shell::xdg::window::WindowHandler};
+use sctk::{delegate_xdg_window, reexports::client::Proxy, shell::xdg::window::{WindowHandler, }, delegate_xdg_shell};
 use std::fmt::Debug;
 
 impl<T: Debug> WindowHandler for SctkState<T> {
@@ -56,3 +56,4 @@ impl<T: Debug> WindowHandler for SctkState<T> {
 }
 
 delegate_xdg_window!(@<T: 'static + Debug> SctkState<T>);
+delegate_xdg_shell!(@<T: 'static + Debug> SctkState<T>);

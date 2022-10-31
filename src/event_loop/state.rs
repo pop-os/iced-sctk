@@ -12,6 +12,7 @@ use iced_native::{
         wayland::layer_surface::{IcedLayerSurface, IcedMargin},
     },
     keyboard::Modifiers,
+    window
 };
 use sctk::{
     compositor::CompositorState,
@@ -29,7 +30,7 @@ use sctk::{
                 wl_surface::{self, WlSurface},
                 wl_touch::WlTouch,
             },
-            Connection, QueueHandle,
+            Connection, QueueHandle, Proxy,
         },
     },
     registry::RegistryState,
@@ -40,7 +41,7 @@ use sctk::{
         },
         xdg::{
             popup::{Popup, PopupConfigure},
-            window::{Window, WindowConfigure, XdgWindowState},
+            window::{Window, WindowConfigure, XdgWindowState, WindowDecorations},
             XdgShellState, XdgShellSurface,
         },
     },
@@ -65,12 +66,11 @@ pub(crate) struct SctkSeat {
 pub struct SctkWindow<T> {
     pub(crate) id: iced_native::window::Id,
     pub(crate) window: Window,
-    pub(crate) requested_size: Option<LogicalSize<u32>>,
-    pub(crate) current_size: Option<LogicalSize<u32>>,
+    pub(crate) requested_size: Option<(u32, u32)>,
+    pub(crate) current_size: Option<(u32, u32)>,
     pub(crate) last_configure: Option<WindowConfigure>,
     /// Requests that SCTK window should perform.
     pub(crate) pending_requests: Vec<platform_specific::wayland::window::Action<T>>,
-    xdg_surface: Arc<XdgShellSurface>,
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +187,62 @@ impl<T> SctkState<T>
 where
     T: 'static + Debug,
 {
+    pub fn get_window(
+        &mut self,
+        window::Settings { size, min_size, max_size, decorations, transparent, icon, .. }: window::Settings,
+        window_id: window::Id,
+        app_id: Option<String>,
+        title: Option<String>,
+        parent: Option<ObjectId>,
+    ) -> (window::Id, WlSurface) {
+        // TODO Ashley: set transparency regions
+        // TODO Ashley: set icon
+        // TODO Ashley: save settings for window
+        let wl_surface = self
+            .compositor_state
+            .create_surface(&self.queue_handle)
+            .expect("failed to create the wl_surface");
+        let mut builder = if let Some(app_id) = app_id {
+            Window::builder().app_id(app_id)
+        } else {
+            Window::builder()
+        };
+        builder = if let Some(min_size) = min_size {
+            builder.min_size(min_size)
+        } else {
+            builder
+        };
+        builder = if let Some(max_size) = max_size {
+            builder.max_size(max_size)
+        } else {
+            builder
+        };
+        builder = if let Some(title) = title {
+            builder.title(title)
+        } else {
+            builder
+        };
+        builder = if let Some(parent) = parent.and_then(|p| self.windows.iter().find(|w| w.window.wl_surface().id() == p)) {
+            builder.parent(&parent.window)
+        } else {
+            builder
+        };
+        let window = builder
+        .decorations(if decorations {WindowDecorations::RequestServer} else {WindowDecorations::RequestClient})
+        .map(&self.queue_handle, &self.xdg_shell_state, &mut self.xdg_window_state, wl_surface.clone())
+        .expect("failed to create window");
+        self.windows.push(SctkWindow {
+            id: window_id,
+            window,
+            requested_size: Some(size),
+            current_size: Some((1,1)),
+            last_configure: None,
+            pending_requests: Vec::new(),
+        });
+        (window_id, wl_surface)
+
+    }
+
     pub fn get_layer_surface(
         &mut self,
         IcedLayerSurface {
@@ -204,7 +260,7 @@ where
         let wl_surface = self
             .compositor_state
             .create_surface(&self.queue_handle)
-            .expect("failed to create the initial surface");
+            .expect("failed to create the wl_surface");
 
         let layer_surface = LayerSurface::builder()
             .anchor(anchor)
