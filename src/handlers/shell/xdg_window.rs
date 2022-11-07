@@ -2,7 +2,10 @@ use crate::{
     event_loop::state::SctkState,
     sctk_event::{SctkEvent, WindowEventVariant},
 };
-use sctk::{delegate_xdg_window, reexports::client::Proxy, shell::xdg::window::{WindowHandler, }, delegate_xdg_shell};
+use sctk::{
+    delegate_xdg_shell, delegate_xdg_window, reexports::client::Proxy,
+    shell::xdg::window::WindowHandler,
+};
 use std::fmt::Debug;
 
 impl<T: Debug> WindowHandler for SctkState<T> {
@@ -33,7 +36,7 @@ impl<T: Debug> WindowHandler for SctkState<T> {
         _conn: &sctk::reexports::client::Connection,
         _qh: &sctk::reexports::client::QueueHandle<Self>,
         window: &sctk::shell::xdg::window::Window,
-        configure: sctk::shell::xdg::window::WindowConfigure,
+        mut configure: sctk::shell::xdg::window::WindowConfigure,
         _serial: u32,
     ) {
         let window = match self
@@ -44,10 +47,16 @@ impl<T: Debug> WindowHandler for SctkState<T> {
             Some(w) => w,
             None => return,
         };
+
+        if configure.new_size.is_none() {
+            configure.new_size = Some(window.requested_size.unwrap_or((300, 500)));
+        };
+
         let wl_surface = window.window.wl_surface();
         let id = wl_surface.id();
         let first = window.last_configure.is_none();
         window.last_configure.replace(configure.clone());
+        wl_surface.commit();
         self.sctk_events.push(SctkEvent::WindowEvent {
             variant: WindowEventVariant::Configure(configure, wl_surface.clone(), first),
             id,

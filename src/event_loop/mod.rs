@@ -11,18 +11,15 @@ use std::{
 
 use crate::{
     application::Event,
-    commands::layer_surface,
-    dpi::LogicalSize,
     sctk_event::{
-        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceCompositorUpdate,
-        SurfaceUserRequest, WindowEventVariant,
+        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceUserRequest,
     },
     settings,
 };
 
 use iced_native::command::platform_specific::{
     self,
-    wayland::layer_surface::{IcedLayerSurface, IcedMargin},
+    wayland::{layer_surface::SctkLayerSurfaceSettings, window::SctkWindowSettings},
 };
 use sctk::{
     compositor::CompositorState,
@@ -174,9 +171,17 @@ where
 
     pub fn get_layer_surface(
         &mut self,
-        layer_surface: IcedLayerSurface,
+        layer_surface: SctkLayerSurfaceSettings,
     ) -> (iced_native::window::Id, WlSurface) {
         self.state.get_layer_surface(layer_surface)
+    }
+
+    pub fn get_window(
+        &mut self,
+        settings: SctkWindowSettings,
+    ) -> (iced_native::window::Id, WlSurface) {
+        self.state
+            .get_window(settings)
     }
 
     pub fn run_return<F>(&mut self, mut callback: F) -> i32

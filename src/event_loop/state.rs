@@ -9,10 +9,13 @@ use crate::{
 use iced_native::{
     command::platform_specific::{
         self,
-        wayland::layer_surface::{IcedLayerSurface, IcedMargin},
+        wayland::{
+            layer_surface::{IcedMargin, SctkLayerSurfaceSettings},
+            window::SctkWindowSettings,
+        },
     },
     keyboard::Modifiers,
-    window
+    window,
 };
 use sctk::{
     compositor::CompositorState,
@@ -30,7 +33,7 @@ use sctk::{
                 wl_surface::{self, WlSurface},
                 wl_touch::WlTouch,
             },
-            Connection, QueueHandle, Proxy,
+            Connection, Proxy, QueueHandle,
         },
     },
     registry::RegistryState,
@@ -41,7 +44,7 @@ use sctk::{
         },
         xdg::{
             popup::{Popup, PopupConfigure},
-            window::{Window, WindowConfigure, XdgWindowState, WindowDecorations},
+            window::{Window, WindowConfigure, WindowDecorations, XdgWindowState},
             XdgShellState, XdgShellSurface,
         },
     },
@@ -187,17 +190,27 @@ impl<T> SctkState<T>
 where
     T: 'static + Debug,
 {
-    pub fn get_window(
-        &mut self,
-        window::Settings { size, min_size, max_size, decorations, transparent, icon, .. }: window::Settings,
-        window_id: window::Id,
-        app_id: Option<String>,
-        title: Option<String>,
-        parent: Option<ObjectId>,
-    ) -> (window::Id, WlSurface) {
-        // TODO Ashley: set transparency regions
+    pub fn get_window(&mut self, settings: SctkWindowSettings) -> (window::Id, WlSurface) {
+        let SctkWindowSettings {
+            iced_settings:
+                window::Settings {
+                    size,
+                    min_size,
+                    max_size,
+                    decorations,
+                    transparent,
+                    icon,
+                    ..
+                },
+            window_id,
+            app_id,
+            title,
+            parent,
+        } = settings;
+        // TODO Ashley: set window as opaque if transparency is false
         // TODO Ashley: set icon
         // TODO Ashley: save settings for window
+        // TODO Ashley: decorations
         let wl_surface = self
             .compositor_state
             .create_surface(&self.queue_handle)
@@ -222,30 +235,38 @@ where
         } else {
             builder
         };
-        builder = if let Some(parent) = parent.and_then(|p| self.windows.iter().find(|w| w.window.wl_surface().id() == p)) {
-            builder.parent(&parent.window)
-        } else {
-            builder
-        };
+        // builder = if let Some(parent) = parent.and_then(|p| self.windows.iter().find(|w| w.window.wl_surface().id() == p)) {
+        //     builder.parent(&parent.window)
+        // } else {
+        //     builder
+        // };
         let window = builder
-        .decorations(if decorations {WindowDecorations::RequestServer} else {WindowDecorations::RequestClient})
-        .map(&self.queue_handle, &self.xdg_shell_state, &mut self.xdg_window_state, wl_surface.clone())
-        .expect("failed to create window");
+            .decorations(if decorations {
+                WindowDecorations::RequestServer
+            } else {
+                WindowDecorations::RequestClient
+            })
+            .map(
+                &self.queue_handle,
+                &self.xdg_shell_state,
+                &mut self.xdg_window_state,
+                wl_surface.clone(),
+            )
+            .expect("failed to create window");
         self.windows.push(SctkWindow {
             id: window_id,
             window,
             requested_size: Some(size),
-            current_size: Some((1,1)),
+            current_size: Some((1, 1)),
             last_configure: None,
             pending_requests: Vec::new(),
         });
         (window_id, wl_surface)
-
     }
 
     pub fn get_layer_surface(
         &mut self,
-        IcedLayerSurface {
+        SctkLayerSurfaceSettings {
             id,
             layer,
             keyboard_interactivity,
@@ -255,7 +276,7 @@ where
             margin,
             size,
             exclusive_zone,
-        }: IcedLayerSurface,
+        }: SctkLayerSurfaceSettings,
     ) -> (iced_native::window::Id, WlSurface) {
         let wl_surface = self
             .compositor_state

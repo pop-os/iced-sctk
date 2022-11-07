@@ -1,4 +1,6 @@
-use iced_native::{command::platform_specific::wayland::layer_surface::IcedLayerSurface, window};
+use iced_native::command::platform_specific::wayland::{
+    layer_surface::SctkLayerSurfaceSettings, window::SctkWindowSettings,
+};
 
 #[derive(Debug)]
 pub struct Settings<Flags> {
@@ -18,12 +20,12 @@ pub struct Settings<Flags> {
 
 #[derive(Debug, Clone)]
 pub enum InitialSurface {
-    LayerSurface(IcedLayerSurface),
-    XdgWindow(window::Settings),
+    LayerSurface(SctkLayerSurfaceSettings),
+    XdgWindow(SctkWindowSettings),
 }
 
 impl Default for InitialSurface {
     fn default() -> Self {
-        Self::LayerSurface(IcedLayerSurface::default())
+        Self::LayerSurface(SctkLayerSurfaceSettings::default())
     }
 }

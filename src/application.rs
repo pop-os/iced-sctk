@@ -24,14 +24,17 @@ use iced_native::{
 };
 
 use sctk::{
-    reexports::client::{Proxy, protocol::wl_surface::WlSurface},
+    reexports::client::{protocol::wl_surface::WlSurface, Proxy},
     seat::{keyboard::Modifiers, pointer::PointerEventKind},
 };
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
 use glutin::{
-    api::{egl::{self, context::PossiblyCurrentContext}, glx::context},
+    api::{
+        egl::{self, context::PossiblyCurrentContext},
+        glx::context,
+    },
     prelude::*,
     surface::WindowSurface,
 };
@@ -205,7 +208,12 @@ where
                 surface,
             )
         }
-        settings::InitialSurface::XdgWindow(_) => todo!(),
+        settings::InitialSurface::XdgWindow(w) => {
+            let (native_id, surface) = event_loop.get_window(
+                w.clone()
+            );
+            (surface.id(), SurfaceIdWrapper::Window(native_id), surface)
+        }
     };
 
     let surface_ids = HashMap::from([(object_id.clone(), native_id)]);

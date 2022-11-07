@@ -5,7 +5,7 @@ use iced_native::window;
 pub use window::{Action, Id};
 pub use window::{Event, Mode};
 
-/// TODO(derezzedex)
+/// close the window
 pub fn close<Message>(id: window::Id) -> Command<Message> {
     Command::single(command::Action::Window(id, Action::Close))
 }
