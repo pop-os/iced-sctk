@@ -11,7 +11,7 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         _conn: &sctk::reexports::client::Connection,
         _qh: &sctk::reexports::client::QueueHandle<Self>,
         popup: &sctk::shell::xdg::popup::Popup,
-        config: sctk::shell::xdg::popup::PopupConfigure,
+        configure: sctk::shell::xdg::popup::PopupConfigure,
     ) {
         let sctk_popup = match self
             .popups
@@ -22,15 +22,16 @@ impl<T: Debug> PopupHandler for SctkState<T> {
             None => return,
         };
         let first = sctk_popup.last_configure.is_none();
-        sctk_popup.last_configure.replace(config.clone());
+        sctk_popup.last_configure.replace(configure.clone());
+
         self.sctk_events.push(SctkEvent::PopupEvent {
-            variant: PopupEventVariant::Configure(config, popup.wl_surface().clone(), first),
+            variant: PopupEventVariant::Configure(configure, popup.wl_surface().clone(), first),
             id: popup.wl_surface().id(),
             toplevel_id: sctk_popup.toplevel.id(),
             parent_id: match &sctk_popup.parent {
-                SctkSurface::LayerSurface(s) => s.wl_surface().id(),
-                SctkSurface::Window(s) => s.wl_surface().id(),
-                SctkSurface::Popup(s) => s.wl_surface().id(),
+                SctkSurface::LayerSurface(s) => s.id(),
+                SctkSurface::Window(s) => s.id(),
+                SctkSurface::Popup(s) => s.id(),
             },
         })
     }
@@ -54,9 +55,9 @@ impl<T: Debug> PopupHandler for SctkState<T> {
             id: popup.wl_surface().id(),
             toplevel_id: sctk_popup.toplevel.id(),
             parent_id: match &sctk_popup.parent {
-                SctkSurface::LayerSurface(s) => s.wl_surface().id(),
-                SctkSurface::Window(s) => s.wl_surface().id(),
-                SctkSurface::Popup(s) => s.wl_surface().id(),
+                SctkSurface::LayerSurface(s) => s.id(),
+                SctkSurface::Window(s) => s.id(),
+                SctkSurface::Popup(s) => s.id(),
             },
         })
         // TODO popup cleanup

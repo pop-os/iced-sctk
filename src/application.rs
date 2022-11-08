@@ -48,6 +48,8 @@ pub enum Event<Message> {
     LayerSurface(platform_specific::wayland::layer_surface::Action<Message>),
     /// window requests from the client
     Window(platform_specific::wayland::window::Action<Message>),
+    /// popup requests from the client
+    Popup(platform_specific::wayland::popup::Action<Message>),
 
     /// request sctk to set the cursor of the active pointer
     SetCursor(Interaction),
@@ -513,18 +515,43 @@ where
                         surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
                     }
                     PopupEventVariant::Done => {
-                        // TODO Ashley: Can they be removed right away?
                         if let Some(id) = surface_ids.get(&id) {
-                            egl_surfaces.remove(&id.inner());
+                            drop(egl_surfaces.remove(&id.inner()));
+                            interfaces.remove(&id.inner());
+                            states.remove(&id.inner());
                         }
                     }
                     PopupEventVariant::WmCapabilities(_) => {}
-                    PopupEventVariant::Configure(configure, _, first) => {
-                        if let Some(state) = surface_ids
-                            .get(&id)
-                            .and_then(|id| states.get_mut(&id.inner()))
-                        {
-                            state.set_logical_size(configure.width as f64, configure.height as f64);
+                    PopupEventVariant::Configure(configure, wl_surface, first) => {
+                        if let Some(id) = surface_ids.get(&id) {
+                            if first && !egl_surfaces.contains_key(&id.inner()) {
+                                let egl_surface = get_surface(
+                                    &egl_display,
+                                    &egl_config,
+                                    &wl_surface,
+                                    configure.width as u32,
+                                    configure.height as u32,
+                                );
+                                egl_surfaces.insert(id.inner(), egl_surface);
+                                let state = State::new(&application, *id);
+
+                                let user_interface = build_user_interface(
+                                    &application,
+                                    user_interface::Cache::default(),
+                                    &mut renderer,
+                                    state.logical_size(),
+                                    &mut debug,
+                                    *id,
+                                );
+                                states.insert(id.inner(), state);
+                                interfaces.insert(id.inner(), user_interface);
+                            }
+                            if let Some(state) = states.get_mut(&id.inner()) {
+                                state.set_logical_size(
+                                    configure.width as f64,
+                                    configure.height as f64,
+                                );
+                            }
                         }
                     }
                     PopupEventVariant::RepositionionedPopup { .. } => {}
@@ -1073,6 +1100,11 @@ fn run_command<A, E>(
                 platform_specific::wayland::Action::Window(window_action),
             )) => {
                 proxy.send_event(Event::Window(window_action));
+            }
+            command::Action::PlatformSpecific(platform_specific::Action::Wayland(
+                platform_specific::wayland::Action::Popup(popup_action),
+            )) => {
+                proxy.send_event(Event::Popup(popup_action));
             }
             _ => {}
         }

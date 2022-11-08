@@ -11,6 +11,7 @@ use iced_native::{
         self,
         wayland::{
             layer_surface::{IcedMargin, SctkLayerSurfaceSettings},
+            popup::SctkPopupSettings,
             window::SctkWindowSettings,
         },
     },
@@ -19,6 +20,7 @@ use iced_native::{
 };
 use sctk::{
     compositor::CompositorState,
+    error::GlobalError,
     output::OutputState,
     reexports::{
         calloop::LoopHandle,
@@ -45,7 +47,7 @@ use sctk::{
         xdg::{
             popup::{Popup, PopupConfigure},
             window::{Window, WindowConfigure, WindowDecorations, XdgWindowState},
-            XdgShellState, XdgShellSurface,
+            XdgPositioner, XdgShellState, XdgShellSurface,
         },
     },
     shm::{multi::MultiPool, ShmState},
@@ -93,9 +95,9 @@ pub struct SctkLayerSurface<T> {
 
 #[derive(Debug, Clone)]
 pub enum SctkSurface {
-    LayerSurface(LayerSurface),
-    Window(Window),
-    Popup(Popup),
+    LayerSurface(WlSurface),
+    Window(WlSurface),
+    Popup(WlSurface),
 }
 
 #[derive(Debug, Clone)]
@@ -104,11 +106,9 @@ pub struct SctkPopup<T> {
     pub(crate) popup: Popup,
     pub(crate) parent: SctkSurface,
     pub(crate) toplevel: WlSurface,
-    pub(crate) requested_size: Option<LogicalSize<u32>>,
-    pub(crate) current_size: Option<LogicalSize<u32>>,
+    pub(crate) requested_size: (u32, u32),
     pub(crate) last_configure: Option<PopupConfigure>,
     // pub(crate) positioner: XdgPositioner,
-    xdg_surface: Arc<XdgShellSurface>,
     pub(crate) pending_requests: Vec<platform_specific::wayland::popup::Action<T>>,
 }
 
@@ -186,10 +186,141 @@ pub struct SctkState<T> {
     pub(crate) connection: Connection,
 }
 
+/// An error that occurred while running an application.
+#[derive(Debug, thiserror::Error)]
+pub enum PopupCreationError {
+    /// Positioner creation failed
+    #[error("Positioner creation failed")]
+    PositionerCreationFailed(GlobalError),
+
+    /// The specified parent is missing
+    #[error("The specified parent is missing")]
+    ParentMissing,
+
+    /// Popup creation failed
+    #[error("Popup creation failed")]
+    PopupCreationFailed(GlobalError),
+}
+
 impl<T> SctkState<T>
 where
     T: 'static + Debug,
 {
+    pub fn get_popup(
+        &mut self,
+        settings: SctkPopupSettings,
+    ) -> Result<(window::Id, ObjectId, ObjectId, WlSurface), PopupCreationError> {
+        let mut positioner = XdgPositioner::new(&self.xdg_shell_state)
+            .map_err(|e| PopupCreationError::PositionerCreationFailed(e))?;
+        positioner.set_anchor(settings.positioner.anchor);
+        positioner.set_anchor_rect(
+            settings.positioner.anchor_rect.x,
+            settings.positioner.anchor_rect.y,
+            settings.positioner.anchor_rect.width,
+            settings.positioner.anchor_rect.height,
+        );
+        positioner.set_constraint_adjustment(settings.positioner.constraint_adjustment);
+        positioner.set_gravity(settings.positioner.gravity);
+        positioner.set_offset(settings.positioner.offset.0, settings.positioner.offset.1);
+        if settings.positioner.reactive {
+            positioner.set_reactive();
+        }
+        positioner.set_size(
+            settings.positioner.size.0 as i32,
+            settings.positioner.size.1 as i32,
+        );
+
+        if let Some(parent) = self.layer_surfaces.iter().find(|l| l.id == settings.parent) {
+            let wl_surface = self
+                .compositor_state
+                .create_surface(&self.queue_handle)
+                .expect("failed to create the wl_surface");
+            let popup = Popup::from_surface(
+                None,
+                &positioner,
+                &self.queue_handle,
+                wl_surface.clone(),
+                &self.xdg_shell_state,
+            )
+            .map_err(|e| PopupCreationError::PopupCreationFailed(e))?;
+
+            parent.surface.get_popup(popup.xdg_popup());
+            wl_surface.commit();
+            self.popups.push(SctkPopup {
+                id: settings.id,
+                popup: popup.clone(),
+                parent: SctkSurface::LayerSurface(parent.surface.wl_surface().clone()),
+                toplevel: parent.surface.wl_surface().clone(),
+                requested_size: settings.positioner.size,
+                last_configure: None,
+                pending_requests: Default::default(),
+            });
+            Ok((
+                settings.id,
+                parent.surface.wl_surface().id(),
+                parent.surface.wl_surface().id(),
+                popup.wl_surface().clone(),
+            ))
+        } else if let Some(parent) = self.windows.iter().find(|w| w.id == settings.parent) {
+            let popup = Popup::new(
+                parent.window.xdg_surface(),
+                &positioner,
+                &self.queue_handle,
+                &self.compositor_state,
+                &self.xdg_shell_state,
+            )
+            .map_err(|e| PopupCreationError::PopupCreationFailed(e))?;
+            self.popups.push(SctkPopup {
+                id: settings.id,
+                popup: popup.clone(),
+                parent: SctkSurface::Window(parent.window.wl_surface().clone()),
+                toplevel: parent.window.wl_surface().clone(),
+                requested_size: settings.positioner.size,
+                last_configure: None,
+                pending_requests: Default::default(),
+            });
+            Ok((
+                settings.id,
+                parent.window.wl_surface().id(),
+                parent.window.wl_surface().id(),
+                popup.wl_surface().clone(),
+            ))
+        } else if let Some(i) = self.popups.iter().position(|p| p.id == settings.parent) {
+            let (popup, parent, toplevel) = {
+                let parent = &self.popups[i];
+                (
+                    Popup::new(
+                        parent.popup.xdg_surface(),
+                        &positioner,
+                        &self.queue_handle,
+                        &self.compositor_state,
+                        &self.xdg_shell_state,
+                    )
+                    .map_err(|e| PopupCreationError::PopupCreationFailed(e))?,
+                    parent.popup.wl_surface().clone(),
+                    parent.toplevel.clone(),
+                )
+            };
+            self.popups.push(SctkPopup {
+                id: settings.id,
+                popup: popup.clone(),
+                parent: SctkSurface::Popup(parent.clone()),
+                toplevel: toplevel.clone(),
+                requested_size: settings.positioner.size,
+                last_configure: None,
+                pending_requests: Default::default(),
+            });
+            Ok((
+                settings.id,
+                parent.id(),
+                toplevel.id(),
+                popup.wl_surface().clone(),
+            ))
+        } else {
+            Err(PopupCreationError::ParentMissing)
+        }
+    }
+
     pub fn get_window(&mut self, settings: SctkWindowSettings) -> (window::Id, WlSurface) {
         let SctkWindowSettings {
             iced_settings:

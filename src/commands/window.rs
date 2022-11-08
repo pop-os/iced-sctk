@@ -37,7 +37,7 @@ pub fn resize_window<Message>(id: window::Id, width: u32, height: u32) -> Comman
     Command::single(command::Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::Window(
             wayland::window::Action::Size { id, width, height },
-        ))
+        )),
     ))
 }
 

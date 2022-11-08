@@ -208,7 +208,16 @@ where
         // Still, we set the exit code to the error's OS error code, or to 1 if not possible.
         let exit_code = loop {
             // Send pending events to the server.
-            let _ = self.state.connection.flush();
+            match self.state.connection.flush() {
+                Ok(_) => {}
+                Err(error) => {
+                    break match error {
+                        WaylandError::Io(err) => err.raw_os_error(),
+                        WaylandError::Protocol(_) => None,
+                    }
+                    .unwrap_or(1)
+                }
+            }
 
             // During the run of the user callback, some other code monitoring and reading the
             // Wayland socket may have been run (mesa for example does this with vsync), if that
@@ -502,6 +511,25 @@ where
                                 );
                             }
                         },
+                    },
+                    Event::Popup(action) => match action {
+                        platform_specific::wayland::popup::Action::Popup { popup, .. } => {
+                            println!("trying to create popup");
+                            if let Ok((id, parent_id, toplevel_id, wl_surface)) = self.state.get_popup(popup) {
+                                println!("popup created");
+                                let object_id = wl_surface.id();
+                                sticky_exit_callback(
+                                    IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Created(object_id.clone(), id), toplevel_id, parent_id, id: object_id }),
+                                    &self.state,
+                                    &mut control_flow,
+                                    &mut callback,
+                                );
+                            }
+                        },
+                        // XXX popup destruction must be done carefully...
+                        platform_specific::wayland::popup::Action::Destroy { id } => todo!(),
+                        platform_specific::wayland::popup::Action::Reposition { id, positioner } => todo!(),
+                        platform_specific::wayland::popup::Action::Grab { id } => todo!(),
                     },
                 }
             }
