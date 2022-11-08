@@ -24,17 +24,14 @@ use iced_native::{
 };
 
 use sctk::{
-    reexports::client::{protocol::wl_surface::WlSurface, Proxy},
+    reexports::client::Proxy,
     seat::{keyboard::Modifiers, pointer::PointerEventKind},
 };
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
 use glutin::{
-    api::{
-        egl::{self, context::PossiblyCurrentContext},
-        glx::context,
-    },
+    api::egl,
     prelude::*,
     surface::WindowSurface,
 };
@@ -50,7 +47,11 @@ pub enum Event<Message> {
     /// TODO
     // Create a wrapper variant of `window::Event` type instead
     // (maybe we should also allow users to listen/react to those internal messages?)
+
+    /// layer surface requests from the client
     LayerSurface(platform_specific::wayland::layer_surface::Action<Message>),
+    /// window requests from the client 
+    Window(platform_specific::wayland::window::Action<Message>),
 
     /// request sctk to set the cursor of the active pointer
     SetCursor(Interaction),
@@ -417,20 +418,50 @@ where
                 },
                 SctkEvent::WindowEvent { variant, id } => match variant {
                     crate::sctk_event::WindowEventVariant::Created(id, native_id) => {
+                        println!("created a window");
                         surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
                     }
                     crate::sctk_event::WindowEventVariant::Close => {
-                        // TODO Ashley: Can they be removed right away?
+                        if let Some(id) = surface_ids.remove(&id) {
+                            drop(egl_surfaces.remove(&id.inner()));
+                            interfaces.remove(&id.inner());
+                            states.remove(&id.inner());
+                        }
                     }
                     crate::sctk_event::WindowEventVariant::WmCapabilities(_)
                     | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
-                    crate::sctk_event::WindowEventVariant::Configure(configure, _, first) => {
-                        if let Some(state) = surface_ids
-                            .get(&id)
-                            .and_then(|id| states.get_mut(&id.inner()))
-                        {
+                    crate::sctk_event::WindowEventVariant::Configure(configure, wl_surface, first) => {
+                        if let Some(id) = surface_ids.get(&id) {
                             let new_size = configure.new_size.unwrap();
-                            state.set_logical_size(new_size.0 as f64, new_size.1 as f64);
+
+                            if first && !egl_surfaces.contains_key(&id.inner()) {
+                                let egl_surface = get_surface(
+                                    &egl_display,
+                                    &egl_config,
+                                    &wl_surface,
+                                    new_size.0,
+                                    new_size.1,
+                                );
+                                egl_surfaces.insert(id.inner(), egl_surface);
+                                let state = State::new(&application, *id);
+
+                                let user_interface = build_user_interface(
+                                    &application,
+                                    user_interface::Cache::default(),
+                                    &mut renderer,
+                                    state.logical_size(),
+                                    &mut debug,
+                                    *id,
+                                );
+                                states.insert(id.inner(), state);
+                                interfaces.insert(id.inner(), user_interface);
+                            }
+                            if let Some(state) = states.get_mut(&id.inner()) {
+                                state.set_logical_size(
+                                    new_size.0 as f64,
+                                    new_size.1 as f64,
+                                );
+                            }
                         }
                     }
                 },
@@ -1046,8 +1077,8 @@ fn run_command<A, E>(
             }
             command::Action::PlatformSpecific(platform_specific::Action::Wayland(
                 platform_specific::wayland::Action::Window(window_action),
-            )) => match window_action {
-                platform_specific::wayland::window::Action::Window { builder, .. } => todo!(),
+            )) => {
+                proxy.send_event(Event::Window(window_action));
             },
             _ => {}
         }

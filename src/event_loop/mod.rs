@@ -12,7 +12,7 @@ use std::{
 use crate::{
     application::Event,
     sctk_event::{
-        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceUserRequest,
+        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceUserRequest, WindowEventVariant,
     },
     settings,
 };
@@ -422,6 +422,18 @@ where
                         // TODO set cursor after cursor theming PR is merged
                         // https://github.com/Smithay/client-toolkit/pull/306
                     }
+                    Event::Window(action) => match action {
+                        platform_specific::wayland::window::Action::Window { builder, _phantom } => {
+                            let (id, wl_surface) = self.state.get_window(builder);
+                            let object_id = wl_surface.id();
+                            sticky_exit_callback(
+                                IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Created(object_id.clone(), id), id: object_id }),
+                                &self.state,
+                                &mut control_flow,
+                                &mut callback,
+                            );
+                        },
+                    },
                 }
             }
 
