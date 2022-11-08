@@ -514,9 +514,7 @@ where
                     },
                     Event::Popup(action) => match action {
                         platform_specific::wayland::popup::Action::Popup { popup, .. } => {
-                            println!("trying to create popup");
                             if let Ok((id, parent_id, toplevel_id, wl_surface)) = self.state.get_popup(popup) {
-                                println!("popup created");
                                 let object_id = wl_surface.id();
                                 sticky_exit_callback(
                                     IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Created(object_id.clone(), id), toplevel_id, parent_id, id: object_id }),

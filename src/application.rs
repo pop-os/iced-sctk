@@ -364,222 +364,232 @@ where
             IcedSctkEvent::UserEvent(message) => {
                 messages.push(message);
             }
-            IcedSctkEvent::SctkEvent(event) => match event {
-                SctkEvent::SeatEvent { .. } => {} // TODO Ashley: handle later possibly if multiseat support is wanted
-                SctkEvent::PointerEvent { variant, .. } => {
-                    let (state, _native_id) = match surface_ids
-                        .get(&variant.surface.id())
-                        .and_then(|id| states.get_mut(&id.inner()).map(|state| (state, id)))
-                    {
-                        Some(s) => s,
-                        None => continue,
-                    };
-                    match variant.kind {
-                        PointerEventKind::Enter { .. } => {
-                            state.set_cursor_position(Point::new(
-                                variant.position.0 as f32,
-                                variant.position.1 as f32,
-                            ));
+            IcedSctkEvent::SctkEvent(event) => {
+                events.push(event.clone());
+                match event {
+                    SctkEvent::SeatEvent { .. } => {} // TODO Ashley: handle later possibly if multiseat support is wanted
+                    SctkEvent::PointerEvent {
+                        variant,
+                        ptr_id,
+                        seat_id,
+                    } => {
+                        let (state, _native_id) = match surface_ids
+                            .get(&variant.surface.id())
+                            .and_then(|id| states.get_mut(&id.inner()).map(|state| (state, id)))
+                        {
+                            Some(s) => s,
+                            None => continue,
+                        };
+                        match variant.kind {
+                            PointerEventKind::Enter { .. } => {
+                                state.set_cursor_position(Point::new(
+                                    variant.position.0 as f32,
+                                    variant.position.1 as f32,
+                                ));
+                            }
+                            PointerEventKind::Leave { .. } => {
+                                state.set_cursor_position(Point::new(-1.0, -1.0));
+                            }
+                            PointerEventKind::Motion { .. } => state.set_cursor_position(
+                                Point::new(variant.position.0 as f32, variant.position.1 as f32),
+                            ),
+                            PointerEventKind::Press { .. }
+                            | PointerEventKind::Release { .. }
+                            | PointerEventKind::Axis { .. } => {}
                         }
-                        PointerEventKind::Leave { .. } => {
-                            state.set_cursor_position(Point::new(-1.0, -1.0));
+                    }
+                    SctkEvent::KeyboardEvent {
+                        variant,
+                        kbd_id,
+                        seat_id,
+                    } => match variant {
+                        KeyboardEventVariant::Leave(_) => {
+                            kbd_surface_id.take();
                         }
-                        PointerEventKind::Motion { .. } => state.set_cursor_position(Point::new(
-                            variant.position.0 as f32,
-                            variant.position.1 as f32,
-                        )),
-                        PointerEventKind::Press { .. }
-                        | PointerEventKind::Release { .. }
-                        | PointerEventKind::Axis { .. } => {}
+                        KeyboardEventVariant::Enter(object_id) => {
+                            kbd_surface_id.replace(object_id);
+                        }
+                        KeyboardEventVariant::Press(_) => {}
+                        KeyboardEventVariant::Release(_) => {}
+                        KeyboardEventVariant::Modifiers(mods) => {
+                            if let Some(state) = kbd_surface_id
+                                .as_ref()
+                                .and_then(|id| surface_ids.get(&id))
+                                .and_then(|id| states.get_mut(&id.inner()))
+                            {
+                                state.modifiers = mods;
+                            }
+                        }
+                    },
+                    SctkEvent::WindowEvent { variant, id } => match variant {
+                        crate::sctk_event::WindowEventVariant::Created(id, native_id) => {
+                            surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
+                        }
+                        crate::sctk_event::WindowEventVariant::Close => {
+                            if let Some(id) = surface_ids.remove(&id) {
+                                drop(egl_surfaces.remove(&id.inner()));
+                                interfaces.remove(&id.inner());
+                                states.remove(&id.inner());
+                            }
+                        }
+                        crate::sctk_event::WindowEventVariant::WmCapabilities(_)
+                        | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
+                        crate::sctk_event::WindowEventVariant::Configure(
+                            configure,
+                            wl_surface,
+                            first,
+                        ) => {
+                            if let Some(id) = surface_ids.get(&id) {
+                                let new_size = configure.new_size.unwrap();
+
+                                if first && !egl_surfaces.contains_key(&id.inner()) {
+                                    let egl_surface = get_surface(
+                                        &egl_display,
+                                        &egl_config,
+                                        &wl_surface,
+                                        new_size.0,
+                                        new_size.1,
+                                    );
+                                    egl_surfaces.insert(id.inner(), egl_surface);
+                                    let state = State::new(&application, *id);
+
+                                    let user_interface = build_user_interface(
+                                        &application,
+                                        user_interface::Cache::default(),
+                                        &mut renderer,
+                                        state.logical_size(),
+                                        &mut debug,
+                                        *id,
+                                    );
+                                    states.insert(id.inner(), state);
+                                    interfaces.insert(id.inner(), user_interface);
+                                }
+                                if let Some(state) = states.get_mut(&id.inner()) {
+                                    state.set_logical_size(new_size.0 as f64, new_size.1 as f64);
+                                }
+                            }
+                        }
+                    },
+                    SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
+                        LayerSurfaceEventVariant::Created(id, native_id) => {
+                            surface_ids.insert(id, SurfaceIdWrapper::LayerSurface(native_id));
+                        }
+                        LayerSurfaceEventVariant::Done => {
+                            if let Some(id) = surface_ids.remove(&id) {
+                                drop(egl_surfaces.remove(&id.inner()));
+                                interfaces.remove(&id.inner());
+                                states.remove(&id.inner());
+                            }
+                        }
+                        LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
+                            if let Some(id) = surface_ids.get(&id) {
+                                if first && !egl_surfaces.contains_key(&id.inner()) {
+                                    let egl_surface = get_surface(
+                                        &egl_display,
+                                        &egl_config,
+                                        &wl_surface,
+                                        configure.new_size.0,
+                                        configure.new_size.1,
+                                    );
+                                    egl_surfaces.insert(id.inner(), egl_surface);
+                                    let state = State::new(&application, *id);
+
+                                    let user_interface = build_user_interface(
+                                        &application,
+                                        user_interface::Cache::default(),
+                                        &mut renderer,
+                                        state.logical_size(),
+                                        &mut debug,
+                                        *id,
+                                    );
+                                    states.insert(id.inner(), state);
+                                    interfaces.insert(id.inner(), user_interface);
+                                }
+                                if let Some(state) = states.get_mut(&id.inner()) {
+                                    state.set_logical_size(
+                                        configure.new_size.0 as f64,
+                                        configure.new_size.1 as f64,
+                                    );
+                                }
+                            }
+                        }
+                    },
+                    SctkEvent::PopupEvent {
+                        variant,
+                        toplevel_id: _,
+                        parent_id: _,
+                        id,
+                    } => match variant {
+                        PopupEventVariant::Created(_, native_id) => {
+                            surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
+                        }
+                        PopupEventVariant::Done => {
+                            if let Some(id) = surface_ids.get(&id) {
+                                drop(egl_surfaces.remove(&id.inner()));
+                                interfaces.remove(&id.inner());
+                                states.remove(&id.inner());
+                            }
+                        }
+                        PopupEventVariant::WmCapabilities(_) => {}
+                        PopupEventVariant::Configure(configure, wl_surface, first) => {
+                            if let Some(id) = surface_ids.get(&id) {
+                                if first && !egl_surfaces.contains_key(&id.inner()) {
+                                    let egl_surface = get_surface(
+                                        &egl_display,
+                                        &egl_config,
+                                        &wl_surface,
+                                        configure.width as u32,
+                                        configure.height as u32,
+                                    );
+                                    egl_surfaces.insert(id.inner(), egl_surface);
+                                    let state = State::new(&application, *id);
+
+                                    let user_interface = build_user_interface(
+                                        &application,
+                                        user_interface::Cache::default(),
+                                        &mut renderer,
+                                        state.logical_size(),
+                                        &mut debug,
+                                        *id,
+                                    );
+                                    states.insert(id.inner(), state);
+                                    interfaces.insert(id.inner(), user_interface);
+                                }
+                                if let Some(state) = states.get_mut(&id.inner()) {
+                                    state.set_logical_size(
+                                        configure.width as f64,
+                                        configure.height as f64,
+                                    );
+                                }
+                            }
+                        }
+                        PopupEventVariant::RepositionionedPopup { .. } => {}
+                    },
+                    // TODO forward these events to an application which requests them?
+                    SctkEvent::NewOutput { id, info } => {
+                        events.push(SctkEvent::NewOutput { id, info });
                     }
-                }
-                SctkEvent::KeyboardEvent { variant, .. } => match variant {
-                    KeyboardEventVariant::Leave(_) => {
-                        kbd_surface_id.take();
+                    SctkEvent::UpdateOutput { id, info } => {
+                        events.push(SctkEvent::UpdateOutput { id, info });
                     }
-                    KeyboardEventVariant::Enter(object_id) => {
-                        kbd_surface_id.replace(object_id);
+                    SctkEvent::RemovedOutput(id) => {
+                        events.push(SctkEvent::RemovedOutput(id));
                     }
-                    KeyboardEventVariant::Press(_) => {}
-                    KeyboardEventVariant::Release(_) => {}
-                    KeyboardEventVariant::Modifiers(mods) => {
-                        if let Some(state) = kbd_surface_id
-                            .as_ref()
-                            .and_then(|id| surface_ids.get(&id))
+                    SctkEvent::Draw(_) => unimplemented!(), // probably should never be forwarded here...
+                    SctkEvent::ScaleFactorChanged {
+                        factor,
+                        id,
+                        inner_size: _,
+                    } => {
+                        if let Some(state) = surface_ids
+                            .get(&id)
                             .and_then(|id| states.get_mut(&id.inner()))
                         {
-                            state.modifiers = mods;
+                            state.set_scale_factor(factor);
                         }
-                    }
-                },
-                SctkEvent::WindowEvent { variant, id } => match variant {
-                    crate::sctk_event::WindowEventVariant::Created(id, native_id) => {
-                        surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
-                    }
-                    crate::sctk_event::WindowEventVariant::Close => {
-                        if let Some(id) = surface_ids.remove(&id) {
-                            drop(egl_surfaces.remove(&id.inner()));
-                            interfaces.remove(&id.inner());
-                            states.remove(&id.inner());
-                        }
-                    }
-                    crate::sctk_event::WindowEventVariant::WmCapabilities(_)
-                    | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
-                    crate::sctk_event::WindowEventVariant::Configure(
-                        configure,
-                        wl_surface,
-                        first,
-                    ) => {
-                        if let Some(id) = surface_ids.get(&id) {
-                            let new_size = configure.new_size.unwrap();
-
-                            if first && !egl_surfaces.contains_key(&id.inner()) {
-                                let egl_surface = get_surface(
-                                    &egl_display,
-                                    &egl_config,
-                                    &wl_surface,
-                                    new_size.0,
-                                    new_size.1,
-                                );
-                                egl_surfaces.insert(id.inner(), egl_surface);
-                                let state = State::new(&application, *id);
-
-                                let user_interface = build_user_interface(
-                                    &application,
-                                    user_interface::Cache::default(),
-                                    &mut renderer,
-                                    state.logical_size(),
-                                    &mut debug,
-                                    *id,
-                                );
-                                states.insert(id.inner(), state);
-                                interfaces.insert(id.inner(), user_interface);
-                            }
-                            if let Some(state) = states.get_mut(&id.inner()) {
-                                state.set_logical_size(new_size.0 as f64, new_size.1 as f64);
-                            }
-                        }
-                    }
-                },
-                SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
-                    LayerSurfaceEventVariant::Created(id, native_id) => {
-                        surface_ids.insert(id, SurfaceIdWrapper::LayerSurface(native_id));
-                    }
-                    LayerSurfaceEventVariant::Done => {
-                        if let Some(id) = surface_ids.remove(&id) {
-                            drop(egl_surfaces.remove(&id.inner()));
-                            interfaces.remove(&id.inner());
-                            states.remove(&id.inner());
-                        }
-                    }
-                    LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
-                        if let Some(id) = surface_ids.get(&id) {
-                            if first && !egl_surfaces.contains_key(&id.inner()) {
-                                let egl_surface = get_surface(
-                                    &egl_display,
-                                    &egl_config,
-                                    &wl_surface,
-                                    configure.new_size.0,
-                                    configure.new_size.1,
-                                );
-                                egl_surfaces.insert(id.inner(), egl_surface);
-                                let state = State::new(&application, *id);
-
-                                let user_interface = build_user_interface(
-                                    &application,
-                                    user_interface::Cache::default(),
-                                    &mut renderer,
-                                    state.logical_size(),
-                                    &mut debug,
-                                    *id,
-                                );
-                                states.insert(id.inner(), state);
-                                interfaces.insert(id.inner(), user_interface);
-                            }
-                            if let Some(state) = states.get_mut(&id.inner()) {
-                                state.set_logical_size(
-                                    configure.new_size.0 as f64,
-                                    configure.new_size.1 as f64,
-                                );
-                            }
-                        }
-                    }
-                },
-                SctkEvent::PopupEvent {
-                    variant,
-                    toplevel_id: _,
-                    parent_id: _,
-                    id,
-                } => match variant {
-                    PopupEventVariant::Created(_, native_id) => {
-                        surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
-                    }
-                    PopupEventVariant::Done => {
-                        if let Some(id) = surface_ids.get(&id) {
-                            drop(egl_surfaces.remove(&id.inner()));
-                            interfaces.remove(&id.inner());
-                            states.remove(&id.inner());
-                        }
-                    }
-                    PopupEventVariant::WmCapabilities(_) => {}
-                    PopupEventVariant::Configure(configure, wl_surface, first) => {
-                        if let Some(id) = surface_ids.get(&id) {
-                            if first && !egl_surfaces.contains_key(&id.inner()) {
-                                let egl_surface = get_surface(
-                                    &egl_display,
-                                    &egl_config,
-                                    &wl_surface,
-                                    configure.width as u32,
-                                    configure.height as u32,
-                                );
-                                egl_surfaces.insert(id.inner(), egl_surface);
-                                let state = State::new(&application, *id);
-
-                                let user_interface = build_user_interface(
-                                    &application,
-                                    user_interface::Cache::default(),
-                                    &mut renderer,
-                                    state.logical_size(),
-                                    &mut debug,
-                                    *id,
-                                );
-                                states.insert(id.inner(), state);
-                                interfaces.insert(id.inner(), user_interface);
-                            }
-                            if let Some(state) = states.get_mut(&id.inner()) {
-                                state.set_logical_size(
-                                    configure.width as f64,
-                                    configure.height as f64,
-                                );
-                            }
-                        }
-                    }
-                    PopupEventVariant::RepositionionedPopup { .. } => {}
-                },
-                // TODO forward these events to an application which requests them?
-                SctkEvent::NewOutput { id, info } => {
-                    events.push(SctkEvent::NewOutput { id, info });
-                }
-                SctkEvent::UpdateOutput { id, info } => {
-                    events.push(SctkEvent::UpdateOutput { id, info });
-                }
-                SctkEvent::RemovedOutput(id) => {
-                    events.push(SctkEvent::RemovedOutput(id));
-                }
-                SctkEvent::Draw(_) => unimplemented!(), // probably should never be forwarded here...
-                SctkEvent::ScaleFactorChanged {
-                    factor,
-                    id,
-                    inner_size: _,
-                } => {
-                    if let Some(state) = surface_ids
-                        .get(&id)
-                        .and_then(|id| states.get_mut(&id.inner()))
-                    {
-                        state.set_scale_factor(factor);
                     }
                 }
-            },
+            }
             IcedSctkEvent::MainEventsCleared => {
                 let mut needs_redraw = false;
                 for (object_id, native_id) in &surface_ids {
@@ -619,6 +629,10 @@ where
                     let cursor_position = states.get(&id).unwrap().cursor_position();
                     if filtered.is_empty() && messages.is_empty() {
                         continue;
+                    } else {
+                        // TODO ASHLEY: remove this after figuring out why
+                        // user_interface::State::Outdated isn't being returned after processing events like when hovering over a button
+                        needs_redraw = true;
                     }
                     debug.event_processing_started();
                     let native_events: Vec<_> = filtered
