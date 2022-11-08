@@ -412,7 +412,6 @@ where
                 },
                 SctkEvent::WindowEvent { variant, id } => match variant {
                     crate::sctk_event::WindowEventVariant::Created(id, native_id) => {
-                        println!("created a window");
                         surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
                     }
                     crate::sctk_event::WindowEventVariant::Close => {

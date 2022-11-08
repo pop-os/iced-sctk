@@ -22,16 +22,22 @@ pub fn get_window<Message>(builder: SctkWindowSettings) -> Command<Message> {
     ))
 }
 
+// TODO Ashley refactor to use regular window events maybe...
 /// close the window
 pub fn close_window<Message>(id: window::Id) -> Command<Message> {
-    Command::single(command::Action::Window(id, Action::Close))
+    Command::single(command::Action::PlatformSpecific(
+        platform_specific::Action::Wayland(wayland::Action::Window(
+            wayland::window::Action::Destroy(id),
+        )),
+    ))
 }
 
 /// Resizes the window to the given logical dimensions.
 pub fn resize_window<Message>(id: window::Id, width: u32, height: u32) -> Command<Message> {
-    Command::single(command::Action::Window(
-        id,
-        Action::Resize { width, height },
+    Command::single(command::Action::PlatformSpecific(
+        platform_specific::Action::Wayland(wayland::Action::Window(
+            wayland::window::Action::Size { id, width, height },
+        ))
     ))
 }
 

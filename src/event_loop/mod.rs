@@ -433,6 +433,75 @@ where
                                 &mut callback,
                             );
                         },
+                        platform_specific::wayland::window::Action::Size { id, width, height } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.requested_size = Some((width, height));
+                                window.window.xdg_surface().set_window_geometry(0, 0, width as i32, height as i32);
+                            }
+                        },
+                        platform_specific::wayland::window::Action::MinSize { id, size } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.set_min_size(size)
+                            }
+                        },
+                        platform_specific::wayland::window::Action::MaxSize { id, size } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.set_max_size(size)
+                            }
+                        },
+                        platform_specific::wayland::window::Action::Title { id, title } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.set_title(title)
+                            }
+                        },
+                        platform_specific::wayland::window::Action::Minimize { id } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.set_mimimized();
+                            }
+                        },
+                        platform_specific::wayland::window::Action::Maximize { id } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.set_maximized();
+                            }
+                        },
+                        platform_specific::wayland::window::Action::UnsetMaximize { id } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.unset_maximized();
+                            }
+                        },
+                        platform_specific::wayland::window::Action::Fullscreen { id } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                // TODO ASHLEY: allow specific output to be requested for fullscreen?
+                                window.window.set_fullscreen(None);
+                            }
+                        },
+                        platform_specific::wayland::window::Action::UnsetFullscreen { id } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                window.window.unset_fullscreen();
+                            }
+                        },
+                        platform_specific::wayland::window::Action::InteractiveMove { id } => {
+                            if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
+                                todo!()
+                            }
+                        },
+                        platform_specific::wayland::window::Action::InteractiveResize { id, edge } => todo!(),
+                        platform_specific::wayland::window::Action::ShowWindowMenu { id, x, y } => todo!(),
+                        platform_specific::wayland::window::Action::Destroy(id) => {
+                            if let Some(i) = self.state.windows.iter().position(|l| &l.id == &id) {
+                                let window = self.state.windows.remove(i);
+                                window.window.xdg_toplevel().destroy();
+                                sticky_exit_callback(
+                                    IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent {
+                                        variant: WindowEventVariant::Close,
+                                        id: window.window.wl_surface().id(),
+                                    }),
+                                    &self.state,
+                                    &mut control_flow,
+                                    &mut callback,
+                                );
+                            }
+                        },
                     },
                 }
             }
