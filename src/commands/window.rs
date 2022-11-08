@@ -2,7 +2,10 @@
 use std::marker::PhantomData;
 
 use crate::command::{self, Command};
-use iced_native::command::platform_specific::{self, wayland::{self, window::SctkWindowSettings}};
+use iced_native::command::platform_specific::{
+    self,
+    wayland::{self, window::SctkWindowSettings},
+};
 use iced_native::window;
 
 pub use window::{Action, Id};

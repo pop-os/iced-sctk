@@ -30,11 +30,7 @@ use sctk::{
 use std::{collections::HashMap, ffi::CString, fmt, marker::PhantomData, num::NonZeroU32};
 use wayland_backend::client::ObjectId;
 
-use glutin::{
-    api::egl,
-    prelude::*,
-    surface::WindowSurface,
-};
+use glutin::{api::egl, prelude::*, surface::WindowSurface};
 use iced_graphics::{compositor, renderer, window, Color, Point, Viewport};
 use iced_native::user_interface::{self, UserInterface};
 use iced_native::window::Id as SurfaceId;
@@ -50,7 +46,7 @@ pub enum Event<Message> {
 
     /// layer surface requests from the client
     LayerSurface(platform_specific::wayland::layer_surface::Action<Message>),
-    /// window requests from the client 
+    /// window requests from the client
     Window(platform_specific::wayland::window::Action<Message>),
 
     /// request sctk to set the cursor of the active pointer
@@ -210,9 +206,7 @@ where
             )
         }
         settings::InitialSurface::XdgWindow(w) => {
-            let (native_id, surface) = event_loop.get_window(
-                w.clone()
-            );
+            let (native_id, surface) = event_loop.get_window(w.clone());
             (surface.id(), SurfaceIdWrapper::Window(native_id), surface)
         }
     };
@@ -430,7 +424,11 @@ where
                     }
                     crate::sctk_event::WindowEventVariant::WmCapabilities(_)
                     | crate::sctk_event::WindowEventVariant::ConfigureBounds { .. } => {}
-                    crate::sctk_event::WindowEventVariant::Configure(configure, wl_surface, first) => {
+                    crate::sctk_event::WindowEventVariant::Configure(
+                        configure,
+                        wl_surface,
+                        first,
+                    ) => {
                         if let Some(id) = surface_ids.get(&id) {
                             let new_size = configure.new_size.unwrap();
 
@@ -457,10 +455,7 @@ where
                                 interfaces.insert(id.inner(), user_interface);
                             }
                             if let Some(state) = states.get_mut(&id.inner()) {
-                                state.set_logical_size(
-                                    new_size.0 as f64,
-                                    new_size.1 as f64,
-                                );
+                                state.set_logical_size(new_size.0 as f64, new_size.1 as f64);
                             }
                         }
                     }
@@ -1079,7 +1074,7 @@ fn run_command<A, E>(
                 platform_specific::wayland::Action::Window(window_action),
             )) => {
                 proxy.send_event(Event::Window(window_action));
-            },
+            }
             _ => {}
         }
     }

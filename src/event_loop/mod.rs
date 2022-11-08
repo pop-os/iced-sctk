@@ -12,7 +12,8 @@ use std::{
 use crate::{
     application::Event,
     sctk_event::{
-        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceUserRequest, WindowEventVariant,
+        IcedSctkEvent, LayerSurfaceEventVariant, SctkEvent, StartCause, SurfaceUserRequest,
+        WindowEventVariant,
     },
     settings,
 };
@@ -180,8 +181,7 @@ where
         &mut self,
         settings: SctkWindowSettings,
     ) -> (iced_native::window::Id, WlSurface) {
-        self.state
-            .get_window(settings)
+        self.state.get_window(settings)
     }
 
     pub fn run_return<F>(&mut self, mut callback: F) -> i32
