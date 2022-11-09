@@ -26,21 +26,21 @@ wayland-backend = {version = "=0.1.0-beta.13", features = ["client_system"]}
 [dependencies.iced_native]
 version = "0.5"
 git = "https://github.com/pop-os/iced"
-branch = "sctk"
+branch = "sctk-cosmic"
 features = ["sctk"]
 # path = "../../cosmic-iced/native"
 
 [dependencies.iced_graphics]
 version = "0.3"
 git = "https://github.com/pop-os/iced"
-branch = "sctk"
+branch = "sctk-cosmic"
 # path = "../../cosmic-iced/graphics"
 features = ["opengl"]
 
 [dependencies.iced_futures]
 version = "0.4"
 git = "https://github.com/pop-os/iced"
-branch = "sctk"
+branch = "sctk-cosmic"
 # path = "../../cosmic-iced/futures"
 
 [dependencies.sysinfo]
