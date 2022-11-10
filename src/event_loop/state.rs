@@ -100,6 +100,14 @@ pub enum SctkSurface {
     Popup(WlSurface),
 }
 
+impl SctkSurface {
+    pub fn wl_surface(&self) -> &WlSurface {
+        match self {
+            SctkSurface::LayerSurface(s) | SctkSurface::Window(s) | SctkSurface::Popup(s) => s,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SctkPopup<T> {
     pub(crate) id: iced_native::window::Id,
