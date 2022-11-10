@@ -514,7 +514,6 @@ where
                     },
                     Event::Popup(action) => match action {
                         platform_specific::wayland::popup::Action::Popup { popup, .. } => {
-                            dbg!(popup.id);
                             if let Ok((id, parent_id, toplevel_id, wl_surface)) = self.state.get_popup(popup) {
                                 let object_id = wl_surface.id();
                                 sticky_exit_callback(
