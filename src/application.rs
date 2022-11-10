@@ -851,7 +851,7 @@ where
         let title = application.title();
         let scale_factor = application.scale_factor();
         let theme = application.theme();
-        let appearance = theme.appearance(application.style());
+        let appearance = theme.appearance(&application.style());
 
         let viewport = Viewport::with_physical_size(Size::new(1, 1), 1.0);
 
@@ -972,7 +972,7 @@ where
     fn synchronize(&mut self, application: &A) {
         // Update theme and appearance
         self.theme = application.theme();
-        self.appearance = self.theme.appearance(application.style());
+        self.appearance = self.theme.appearance(&application.style());
     }
 }
 
