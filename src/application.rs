@@ -390,9 +390,11 @@ where
                             PointerEventKind::Leave { .. } => {
                                 state.set_cursor_position(Point::new(-1.0, -1.0));
                             }
-                            PointerEventKind::Motion { .. } => state.set_cursor_position(
+                            PointerEventKind::Motion { .. } => {
+                                state.set_cursor_position(
                                 Point::new(variant.position.0 as f32, variant.position.1 as f32),
-                            ),
+                                );
+                            },
                             PointerEventKind::Press { .. }
                             | PointerEventKind::Release { .. }
                             | PointerEventKind::Axis { .. } => {}
@@ -524,7 +526,7 @@ where
                             surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
                         }
                         PopupEventVariant::Done => {
-                            if let Some(id) = surface_ids.get(&id) {
+                            if let Some(id) = surface_ids.remove(&id) {
                                 drop(egl_surfaces.remove(&id.inner()));
                                 interfaces.remove(&id.inner());
                                 states.remove(&id.inner());
@@ -592,7 +594,7 @@ where
             }
             IcedSctkEvent::MainEventsCleared => {
                 let mut needs_redraw = false;
-                for (object_id, native_id) in &surface_ids {
+                for (object_id, surface_id) in &surface_ids {
                     // returns (remove, copy)
                     let filter_events = |e: &SctkEvent| match e {
                         SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
@@ -615,33 +617,34 @@ where
                     let mut i = 0;
 
                     while i < events.len() {
-                        let should_filter = filter_events(&mut events[i]);
-                        if should_filter.0 {
+                        let (remove, copy) = filter_events(&mut events[i]);
+                        if remove {
                             filtered.push(events.remove(i));
-                            // your code here
-                        } else if should_filter.1 {
+                        } else if copy {
+                            filtered.push(events[i].clone());
                             i += 1;
-                            filtered.push(events[i - 1].clone())
                         } else {
                             i += 1;
                         }
                     }
-                    let cursor_position = states.get(&id).unwrap().cursor_position();
+                    let cursor_position = match states.get(&surface_id.inner()) {
+                        Some(s) => s.cursor_position(),
+                        None => continue,
+                    };
                     if filtered.is_empty() && messages.is_empty() {
                         continue;
                     } else {
-                        // TODO ASHLEY: remove this after figuring out why
-                        // user_interface::State::Outdated isn't being returned after processing events like when hovering over a button
-                        needs_redraw = true;
+                        ev_proxy.send_event(Event::SctkEvent(IcedSctkEvent::RedrawRequested(
+                            object_id.clone(),
+                        )));
                     }
                     debug.event_processing_started();
                     let native_events: Vec<_> = filtered
                         .into_iter()
                         .filter_map(|e| e.to_native(&mut mods, &surface_ids))
-                        .collect();
-
+                        .collect(); 
                     let (interface_state, statuses) = {
-                        let user_interface = interfaces.get_mut(&id).unwrap();
+                        let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
                         user_interface.update(
                             native_events.as_slice(), // TODO Ashley: pass filtered events & add platform specific events to iced_native
                             cursor_position,
@@ -661,8 +664,11 @@ where
                     }
                 }
                 if needs_redraw {
-                    for (object_id, _) in &surface_ids {
-                        let state = &mut states.get_mut(&id).unwrap();
+                    for (_object_id, surface_id) in &surface_ids {
+                        let state = match states.get_mut(&surface_id.inner()) {
+                            Some(s) => s,
+                            None => continue,
+                        };
                         let pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
                             .drain()
                             .map(|(id, interface)| (id, interface.into_cache()))
@@ -693,10 +699,6 @@ where
                             &states,
                             pure_states,
                         ));
-
-                        ev_proxy.send_event(Event::SctkEvent(IcedSctkEvent::RedrawRequested(
-                            object_id.clone(),
-                        )));
 
                         if should_exit {
                             break 'main;
