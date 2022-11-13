@@ -47,7 +47,21 @@ where
     ) {
         let my_seat = match self.seats.iter_mut().find(|s| s.seat == seat) {
             Some(s) => s,
-            None => return,
+            None => {
+                self.seats.push(SctkSeat {
+                    seat: seat.clone(),
+                    kbd: None,
+                    ptr: None,
+                    touch: None,
+                    data_device: None,
+                    modifiers: Modifiers::default(),
+                    kbd_focus: None,
+                    ptr_focus: None,
+                    last_ptr_press: None,
+                    last_kbd_press: None,
+                });
+                self.seats.last_mut().unwrap()
+            },
         };
         // TODO data device
         match capability {
