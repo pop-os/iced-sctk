@@ -44,16 +44,3 @@ where
 
 delegate_shm!(@<T: 'static + Debug> SctkState<T>);
 delegate_registry!(@<T: 'static + Debug> SctkState<T>);
-
-impl<T: Debug> Dispatch<wl_registry::WlRegistry, GlobalListContents> for SctkState<T> {
-    fn event(
-        _state: &mut Self,
-        _registry: &wl_registry::WlRegistry,
-        _event: wl_registry::Event,
-        _data: &GlobalListContents,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-    ) {
-        // We don't need any other globals.
-    }
-}

@@ -89,7 +89,7 @@ where
         let loop_handle = event_loop.handle();
 
         let qh = event_queue.handle();
-        let registry_state = RegistryState::new(&connection, &qh);
+        let registry_state = RegistryState::new(&globals);
 
         let (ping, ping_source) = calloop::ping::make_ping().unwrap();
         // TODO
@@ -129,8 +129,8 @@ where
             state: SctkState {
                 connection,
                 registry_state,
-                seat_state: SeatState::new(),
-                output_state: OutputState::new(),
+                seat_state: SeatState::new(&globals, &qh),
+                output_state: OutputState::new(&globals, &qh),
                 compositor_state: CompositorState::bind(&globals, &qh)
                     .expect("wl_compositor is not available"),
                 shm_state: ShmState::bind(&globals, &qh).expect("wl_shm is not available"),
