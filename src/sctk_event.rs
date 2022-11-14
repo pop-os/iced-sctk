@@ -321,7 +321,7 @@ impl SctkEvent {
                     surface_ids.get(&id).map(|id| match id {
                         SurfaceIdWrapper::LayerSurface(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Layer(LayerEvent::Focused(id.inner())),
+                                wayland::Event::Layer(LayerEvent::Unfocused(id.inner())),
                             ))
                         }
                         SurfaceIdWrapper::Window(id) => {
@@ -329,7 +329,7 @@ impl SctkEvent {
                         }
                         SurfaceIdWrapper::Popup(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Popup(PopupEvent::Focused(id.inner())),
+                                wayland::Event::Popup(PopupEvent::Unfocused(id.inner())),
                             ))
                         }
                     })
@@ -337,7 +337,7 @@ impl SctkEvent {
                 KeyboardEventVariant::Enter(id) => surface_ids.get(&id).map(|id| match id {
                     SurfaceIdWrapper::LayerSurface(_id) => {
                         iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                            wayland::Event::Layer(LayerEvent::Unfocused(id.inner())),
+                            wayland::Event::Layer(LayerEvent::Focused(id.inner())),
                         ))
                     }
                     SurfaceIdWrapper::Window(id) => {
@@ -345,7 +345,7 @@ impl SctkEvent {
                     }
                     SurfaceIdWrapper::Popup(_id) => {
                         iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                            wayland::Event::Popup(PopupEvent::Unfocused(id.inner())),
+                            wayland::Event::Popup(PopupEvent::Focused(id.inner())),
                         ))
                     }
                 }),

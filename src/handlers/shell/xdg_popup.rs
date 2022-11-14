@@ -1,6 +1,6 @@
 use crate::{
     event_loop::state::{self, SctkState, SctkSurface},
-    sctk_event::{PopupEventVariant, SctkEvent},
+    sctk_event::{PopupEventVariant, SctkEvent}, commands::popup,
 };
 use sctk::{delegate_xdg_popup, reexports::client::Proxy, shell::xdg::popup::PopupHandler};
 use std::fmt::Debug;
@@ -42,38 +42,39 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         _qh: &sctk::reexports::client::QueueHandle<Self>,
         popup: &sctk::shell::xdg::popup::Popup,
     ) {
-        let mut to_destroy = vec![popup.wl_surface().id()];
-        while let Some(id) = to_destroy.last().cloned() {
-            if let Some(i) = self
-                .popups
-                .iter()
-                .position(|p| p.popup.wl_surface().id() == id)
-            {
-                let popup_to_destroy = self.popups.remove(i);
-                match &popup_to_destroy.parent.clone() {
-                    state::SctkSurface::LayerSurface(_) | state::SctkSurface::Window(_) => {
-                        popup_to_destroy.popup.xdg_popup().destroy();
-                        self.sctk_events.push(SctkEvent::PopupEvent {
-                            variant: PopupEventVariant::Done,
-                            toplevel_id: popup_to_destroy.toplevel.id(),
-                            parent_id: popup_to_destroy.parent.wl_surface().id(),
-                            id: popup_to_destroy.popup.wl_surface().id(),
-                        });
-                        to_destroy.pop();
-                    }
-                    state::SctkSurface::Popup(popup_to_destroy_first) => {
-                        self.popups.push(popup_to_destroy);
-                        let popup_to_destroy_first = self
-                            .popups
-                            .iter()
-                            .find(|p| p.popup.wl_surface() == popup_to_destroy_first)
-                            .unwrap();
-                        to_destroy.push(popup_to_destroy_first.popup.wl_surface().id());
-                    }
+        let sctk_popup = match self
+            .popups
+            .iter()
+            .position(|s| s.popup.wl_surface().id() == popup.wl_surface().id())
+        {
+            Some(p) => self.popups.remove(p),
+            None => return,
+        };
+        let mut to_destroy = vec![sctk_popup];
+        while let Some(popup_to_destroy) = to_destroy.last() {
+            match popup_to_destroy.parent.clone() {
+                state::SctkSurface::LayerSurface(_) | state::SctkSurface::Window(_) => {
+                    break;
                 }
-            } else {
-                to_destroy.pop();
+                state::SctkSurface::Popup(popup_to_destroy_first) => {
+                    let popup_to_destroy_first = self
+                        .popups
+                        .iter()
+                        .position(|p| p.popup.wl_surface() == &popup_to_destroy_first)
+                        .unwrap();
+                    let popup_to_destroy_first = self.popups.remove(popup_to_destroy_first);
+                    to_destroy.push(popup_to_destroy_first);
+                }
             }
+        }
+        for popup in to_destroy.into_iter().rev() {
+            self.sctk_events.push(SctkEvent::PopupEvent {
+                variant: PopupEventVariant::Done,
+                toplevel_id: popup.toplevel.id(),
+                parent_id: popup.parent.wl_surface().id(),
+                id: popup.popup.wl_surface().id(),
+            });
+            self.popups.push(popup);
         }
     }
 }

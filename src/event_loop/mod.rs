@@ -332,12 +332,46 @@ where
             for event in event_sink_back_buffer.drain(..) {
                 match event {
                     SctkEvent::Draw(id) => must_redraw.push(id),
-                    event => sticky_exit_callback(
-                        IcedSctkEvent::SctkEvent(event),
-                        &self.state,
-                        &mut control_flow,
-                        &mut callback,
-                    ),
+                    SctkEvent::PopupEvent { variant: PopupEventVariant::Done, toplevel_id, parent_id, id } => {
+                        match self.state
+                            .popups
+                            .iter()
+                            .position(|s| s.popup.wl_surface().id() == id)
+                        {
+                            Some(p) => {
+                                let _p = self.state.popups.remove(p);
+                                _p.popup.xdg_popup().destroy();
+                                sticky_exit_callback(IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: PopupEventVariant::Done, toplevel_id, parent_id, id }), &self.state, &mut control_flow, &mut callback);
+                            },
+                            None => continue,
+                        };
+                    },
+                    SctkEvent::LayerSurfaceEvent { variant: LayerSurfaceEventVariant::Done, id } => {
+                        if let Some(i) = self.state.layer_surfaces.iter().position(|l| l.surface.wl_surface().id() == id) {
+                            let _l = self.state.layer_surfaces.remove(i);
+                            sticky_exit_callback(
+                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent { variant: LayerSurfaceEventVariant::Done, id }),
+                                &self.state,
+                                &mut control_flow,
+                                &mut callback,
+                            );
+                        }
+                    },
+                    SctkEvent::WindowEvent { variant: WindowEventVariant::Close, id } => {
+                        if let Some(i) = self.state.layer_surfaces.iter().position(|l| l.surface.wl_surface().id() == id) {
+                            let w = self.state.windows.remove(i);
+                            w.window.xdg_toplevel().destroy();
+                            sticky_exit_callback(
+                                IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Close, id }),
+                                &self.state,
+                                &mut control_flow,
+                                &mut callback,
+                            );
+                        }
+                    },
+                    _ => {
+                        sticky_exit_callback(IcedSctkEvent::SctkEvent(event), &self.state, &mut control_flow, &mut callback)
+                    }
                 }
             }
 
@@ -351,6 +385,7 @@ where
                 match event {
                     Event::SctkEvent(event) => {
                         sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback)
+                        
                     }
                     Event::LayerSurface(action) => match action {
                         platform_specific::wayland::layer_surface::Action::LayerSurface {
@@ -532,31 +567,40 @@ where
                         // XXX popup destruction must be done carefully
                         // first destroy the uppermost popup, then work down to the requested popup
                         platform_specific::wayland::popup::Action::Destroy { id } => {
-                            // TODO ASHLEY: cleanup
-                            let mut to_destroy = vec![id];
-                            while let Some(id) = to_destroy.last().copied() {
-                                if let Some(i) = self.state.popups.iter().position(|p| p.id == id) {
-                                    let popup_to_destroy = self.state.popups.remove(i);
-                                    match &popup_to_destroy.parent.clone() {
-                                        state::SctkSurface::LayerSurface(_) | state::SctkSurface::Window(_) => {
-                                            popup_to_destroy.popup.xdg_popup().destroy();
-                                            sticky_exit_callback(
-                                                IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: PopupEventVariant::Done, toplevel_id: popup_to_destroy.toplevel.id(), parent_id: popup_to_destroy.parent.wl_surface().id(), id: popup_to_destroy.popup.wl_surface().id() }),
-                                                &self.state,
-                                                &mut control_flow,
-                                                &mut callback,
-                                            );
-                                            to_destroy.pop();
-                                        },
-                                        state::SctkSurface::Popup(popup_to_destroy_first) => {
-                                            self.state.popups.push(popup_to_destroy);
-                                            let popup_to_destroy_first = self.state.popups.iter().find(|p| p.popup.wl_surface() == popup_to_destroy_first).unwrap();
-                                            to_destroy.push(popup_to_destroy_first.id);
-                                        },
+                            let sctk_popup = match self.state
+                                .popups
+                                .iter()
+                                .position(|s| s.id == id)
+                            {
+                                Some(p) => self.state.popups.remove(p),
+                                None => continue,
+                            };
+                            let mut to_destroy = vec![sctk_popup];
+                            while let Some(popup_to_destroy) = to_destroy.last() {
+                                match popup_to_destroy.parent.clone() {
+                                    state::SctkSurface::LayerSurface(_) | state::SctkSurface::Window(_) => {
+                                        break;
                                     }
-                                } else {
-                                    to_destroy.pop();
+                                    state::SctkSurface::Popup(popup_to_destroy_first) => {
+                                        let popup_to_destroy_first = self
+                                            .state
+                                            .popups
+                                            .iter()
+                                            .position(|p| p.popup.wl_surface() == &popup_to_destroy_first)
+                                            .unwrap();
+                                        let popup_to_destroy_first = self.state.popups.remove(popup_to_destroy_first);
+                                        to_destroy.push(popup_to_destroy_first);
+                                    }
                                 }
+                            }
+                            for popup in to_destroy.into_iter().rev() {
+                                popup.popup.xdg_popup().destroy();
+                                self.state.sctk_events.push(SctkEvent::PopupEvent {
+                                    variant: PopupEventVariant::Done,
+                                    toplevel_id: popup.toplevel.id(),
+                                    parent_id: popup.parent.wl_surface().id(),
+                                    id: popup.popup.wl_surface().id(),
+                                });
                             }
                         },
                         platform_specific::wayland::popup::Action::Reposition { id, positioner } => todo!(),
