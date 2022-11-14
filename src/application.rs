@@ -94,25 +94,9 @@ where
     /// Returns the widgets to display in the [`Application`].
     ///
     /// These widgets can produce __messages__ based on user interaction.
-    fn view_window(
+    fn view(
         &self,
-        window: iced_native::window::Id,
-    ) -> Element<'_, Self::Message, Self::Renderer>;
-
-    /// Returns the widgets to display in the [`Application`].
-    ///
-    /// These widgets can produce __messages__ based on user interaction.
-    fn view_popup(
-        &self,
-        window: iced_native::window::Id,
-    ) -> Element<'_, Self::Message, Self::Renderer>;
-
-    /// Returns the widgets to display in the [`Application`].
-    ///
-    /// These widgets can produce __messages__ based on user interaction.
-    fn view_layer_surface(
-        &self,
-        window: iced_native::window::Id,
+        id: SurfaceIdWrapper,
     ) -> Element<'_, Self::Message, Self::Renderer>;
 
     /// Initializes the [`Application`] with the flags provided to
@@ -173,7 +157,7 @@ where
     }
 
     /// TODO
-    fn close_requested(&self, window: iced_native::window::Id) -> Self::Message;
+    fn close_requested(&self, id: SurfaceIdWrapper) -> Self::Message;
 }
 
 /// Runs an [`Application`] with an executor, compositor, and the provided
@@ -434,6 +418,7 @@ where
                                 drop(egl_surfaces.remove(&id.inner()));
                                 interfaces.remove(&id.inner());
                                 states.remove(&id.inner());
+                                application.close_requested(id);
                             }
                         }
                         crate::sctk_event::WindowEventVariant::WmCapabilities(_)
@@ -814,11 +799,7 @@ where
     <A::Renderer as crate::Renderer>::Theme: StyleSheet,
 {
     debug.view_started();
-    let view = match id {
-        SurfaceIdWrapper::LayerSurface(id) => application.view_layer_surface(id),
-        SurfaceIdWrapper::Window(id) => application.view_window(id),
-        SurfaceIdWrapper::Popup(id) => application.view_popup(id),
-    };
+    let view = application.view(id);
     debug.view_finished();
 
     debug.layout_started();
