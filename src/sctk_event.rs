@@ -10,7 +10,7 @@ use crate::{
 use iced_graphics::Point;
 use iced_native::{
     keyboard, mouse,
-    window::{self, Id as SurfaceId},
+    window::{self, Id as SurfaceId}, event::{wayland::{LayerEvent, self, PopupEvent}, PlatformSpecific},
 };
 use sctk::{
     output::OutputInfo,
@@ -315,21 +315,21 @@ impl SctkEvent {
                 KeyboardEventVariant::Leave(id) => {
                     // TODO Ashley: Platform specific events
                     surface_ids.get(&id).map(|id| match id {
-                        SurfaceIdWrapper::LayerSurface(_id) => todo!(),
+                        SurfaceIdWrapper::LayerSurface(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Layer(LayerEvent::Focused(id.inner())))),
                         SurfaceIdWrapper::Window(id) => {
                             iced_native::Event::Window(*id, window::Event::Unfocused)
                         }
-                        SurfaceIdWrapper::Popup(_id) => todo!(),
+                        SurfaceIdWrapper::Popup(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Popup(PopupEvent::Focused(id.inner())))),
                     })
                 }
                 KeyboardEventVariant::Enter(id) => {
                     // TODO Ashley: needs surface type to send the right platform specific event for unfocusing
                     surface_ids.get(&id).map(|id| match id {
-                        SurfaceIdWrapper::LayerSurface(_id) => todo!(),
+                        SurfaceIdWrapper::LayerSurface(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Layer(LayerEvent::Unfocused(id.inner())))),
                         SurfaceIdWrapper::Window(id) => {
                             iced_native::Event::Window(*id, window::Event::Focused)
                         }
-                        SurfaceIdWrapper::Popup(_id) => todo!(),
+                        SurfaceIdWrapper::Popup(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Popup(PopupEvent::Unfocused(id.inner())))),
                     })
                 }
                 KeyboardEventVariant::Press(p) => keysym_to_vkey(p.keysym).map(|k| {
