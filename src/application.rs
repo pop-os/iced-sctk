@@ -200,7 +200,8 @@ where
 
     let (object_id, native_id, wl_surface) = match &settings.surface {
         settings::InitialSurface::LayerSurface(l) => {
-            let (native_id, surface) = event_loop.get_layer_surface(l.clone());
+            // TODO ASHLEY should an application panic if it's initial surface can't be created?
+            let (native_id, surface) = event_loop.get_layer_surface(l.clone()).unwrap();
             (
                 surface.id(),
                 SurfaceIdWrapper::LayerSurface(native_id),

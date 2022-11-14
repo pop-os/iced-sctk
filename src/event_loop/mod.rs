@@ -43,7 +43,7 @@ use sctk::{
 };
 use wayland_backend::client::WaylandError;
 
-use self::{control_flow::ControlFlow, state::SctkState};
+use self::{control_flow::ControlFlow, state::{SctkState, LayerSurfaceCreationError}};
 
 // impl SctkSurface {
 //     pub fn hash(&self) -> u64 {
@@ -137,7 +137,7 @@ where
                 xdg_shell_state: XdgShellState::bind(&globals, &qh)
                     .expect("xdg shell is not available"),
                 xdg_window_state: XdgWindowState::bind(&globals, &qh),
-                layer_shell: LayerShell::bind(&globals, &qh).expect("layer shell is not available"),
+                layer_shell: LayerShell::bind(&globals, &qh).ok(),
 
                 // data_device_manager_state: DataDeviceManagerState::new(),
                 queue_handle: qh,
@@ -173,7 +173,7 @@ where
     pub fn get_layer_surface(
         &mut self,
         layer_surface: SctkLayerSurfaceSettings,
-    ) -> (iced_native::window::Id, WlSurface) {
+    ) -> Result<(iced_native::window::Id, WlSurface), LayerSurfaceCreationError> {
         self.state.get_layer_surface(layer_surface)
     }
 
@@ -354,17 +354,19 @@ where
                             builder,
                             _phantom,
                         } => {
-                            let (id, wl_surface) = self.state.get_layer_surface(builder);
-                            let object_id = wl_surface.id();
-                            sticky_exit_callback(
-                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
-                                    variant: LayerSurfaceEventVariant::Created(object_id.clone(), id),
-                                    id: object_id,
-                                }),
-                                &self.state,
-                                &mut control_flow,
-                                &mut callback,
-                            );
+                            // TODO ASHLEY: error handling
+                            if let Ok((id, wl_surface)) = self.state.get_layer_surface(builder) {
+                                let object_id = wl_surface.id();
+                                sticky_exit_callback(
+                                    IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
+                                        variant: LayerSurfaceEventVariant::Created(object_id.clone(), id),
+                                        id: object_id,
+                                    }),
+                                    &self.state,
+                                    &mut control_flow,
+                                    &mut callback,
+                                );
+                            }
                         }
                         platform_specific::wayland::layer_surface::Action::Size {
                             id,

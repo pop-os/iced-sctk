@@ -189,7 +189,7 @@ pub struct SctkState<T> {
     pub(crate) shm_state: ShmState,
     pub(crate) xdg_shell_state: XdgShellState,
     pub(crate) xdg_window_state: XdgWindowState,
-    pub(crate) layer_shell: LayerShell,
+    pub(crate) layer_shell: Option<LayerShell>,
 
     pub(crate) connection: Connection,
 }
@@ -209,6 +209,23 @@ pub enum PopupCreationError {
     #[error("Popup creation failed")]
     PopupCreationFailed(GlobalError),
 }
+
+/// An error that occurred while running an application.
+#[derive(Debug, thiserror::Error)]
+pub enum LayerSurfaceCreationError {
+    /// Layer shell is not supported by the compositor
+    #[error("Layer shell is not supported by the compositor")]
+    LayerShellNotSupported,
+
+    /// WlSurface creation failed
+    #[error("WlSurface creation failed")]
+    WlSurfaceCreationFailed(GlobalError),
+
+    /// LayerSurface creation failed
+    #[error("Layer Surface creation failed")]
+    LayerSurfaceCreationFailed(GlobalError),
+}
+
 
 impl<T> SctkState<T>
 where
@@ -416,11 +433,11 @@ where
             size,
             exclusive_zone,
         }: SctkLayerSurfaceSettings,
-    ) -> (iced_native::window::Id, WlSurface) {
+    ) -> Result<(iced_native::window::Id, WlSurface), LayerSurfaceCreationError> {
+        let layer_shell = self.layer_shell.as_ref().ok_or(LayerSurfaceCreationError::LayerShellNotSupported)?;
         let wl_surface = self
             .compositor_state
-            .create_surface(&self.queue_handle)
-            .expect("failed to create the wl_surface");
+            .create_surface(&self.queue_handle).map_err(|g_err| LayerSurfaceCreationError::WlSurfaceCreationFailed(g_err))?;
 
         let layer_surface = LayerSurface::builder()
             .anchor(anchor)
@@ -431,11 +448,10 @@ where
             .exclusive_zone(exclusive_zone)
             .map(
                 &self.queue_handle,
-                &self.layer_shell,
+                layer_shell,
                 wl_surface.clone(),
                 layer,
-            )
-            .expect("failed to create initial layer surface");
+            ).map_err(|g_err| LayerSurfaceCreationError::LayerSurfaceCreationFailed(g_err))?;
         self.layer_surfaces.push(SctkLayerSurface {
             id,
             surface: layer_surface,
@@ -450,6 +466,6 @@ where
             last_configure: None,
             pending_requests: Vec::new(),
         });
-        (id, wl_surface)
+        Ok((id, wl_surface))
     }
 }
