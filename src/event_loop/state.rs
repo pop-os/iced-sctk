@@ -226,7 +226,6 @@ pub enum LayerSurfaceCreationError {
     LayerSurfaceCreationFailed(GlobalError),
 }
 
-
 impl<T> SctkState<T>
 where
     T: 'static + Debug,
@@ -434,10 +433,14 @@ where
             exclusive_zone,
         }: SctkLayerSurfaceSettings,
     ) -> Result<(iced_native::window::Id, WlSurface), LayerSurfaceCreationError> {
-        let layer_shell = self.layer_shell.as_ref().ok_or(LayerSurfaceCreationError::LayerShellNotSupported)?;
+        let layer_shell = self
+            .layer_shell
+            .as_ref()
+            .ok_or(LayerSurfaceCreationError::LayerShellNotSupported)?;
         let wl_surface = self
             .compositor_state
-            .create_surface(&self.queue_handle).map_err(|g_err| LayerSurfaceCreationError::WlSurfaceCreationFailed(g_err))?;
+            .create_surface(&self.queue_handle)
+            .map_err(|g_err| LayerSurfaceCreationError::WlSurfaceCreationFailed(g_err))?;
 
         let layer_surface = LayerSurface::builder()
             .anchor(anchor)
@@ -446,12 +449,8 @@ where
             .size((size.0.unwrap_or_default(), size.1.unwrap_or_default()))
             .namespace(namespace)
             .exclusive_zone(exclusive_zone)
-            .map(
-                &self.queue_handle,
-                layer_shell,
-                wl_surface.clone(),
-                layer,
-            ).map_err(|g_err| LayerSurfaceCreationError::LayerSurfaceCreationFailed(g_err))?;
+            .map(&self.queue_handle, layer_shell, wl_surface.clone(), layer)
+            .map_err(|g_err| LayerSurfaceCreationError::LayerSurfaceCreationFailed(g_err))?;
         self.layer_surfaces.push(SctkLayerSurface {
             id,
             surface: layer_surface,

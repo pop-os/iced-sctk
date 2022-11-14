@@ -9,8 +9,12 @@ use crate::{
 };
 use iced_graphics::Point;
 use iced_native::{
+    event::{
+        wayland::{self, LayerEvent, PopupEvent},
+        PlatformSpecific,
+    },
     keyboard, mouse,
-    window::{self, Id as SurfaceId}, event::{wayland::{LayerEvent, self, PopupEvent}, PlatformSpecific},
+    window::{self, Id as SurfaceId},
 };
 use sctk::{
     output::OutputInfo,
@@ -315,23 +319,36 @@ impl SctkEvent {
                 KeyboardEventVariant::Leave(id) => {
                     // TODO Ashley: Platform specific events
                     surface_ids.get(&id).map(|id| match id {
-                        SurfaceIdWrapper::LayerSurface(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Layer(LayerEvent::Focused(id.inner())))),
+                        SurfaceIdWrapper::LayerSurface(_id) => {
+                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                                wayland::Event::Layer(LayerEvent::Focused(id.inner())),
+                            ))
+                        }
                         SurfaceIdWrapper::Window(id) => {
                             iced_native::Event::Window(*id, window::Event::Unfocused)
                         }
-                        SurfaceIdWrapper::Popup(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Popup(PopupEvent::Focused(id.inner())))),
-                    })
-                }
-                KeyboardEventVariant::Enter(id) => {
-                    // TODO Ashley: needs surface type to send the right platform specific event for unfocusing
-                    surface_ids.get(&id).map(|id| match id {
-                        SurfaceIdWrapper::LayerSurface(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Layer(LayerEvent::Unfocused(id.inner())))),
-                        SurfaceIdWrapper::Window(id) => {
-                            iced_native::Event::Window(*id, window::Event::Focused)
+                        SurfaceIdWrapper::Popup(_id) => {
+                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                                wayland::Event::Popup(PopupEvent::Focused(id.inner())),
+                            ))
                         }
-                        SurfaceIdWrapper::Popup(_id) => iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Popup(PopupEvent::Unfocused(id.inner())))),
                     })
                 }
+                KeyboardEventVariant::Enter(id) => surface_ids.get(&id).map(|id| match id {
+                    SurfaceIdWrapper::LayerSurface(_id) => {
+                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                            wayland::Event::Layer(LayerEvent::Unfocused(id.inner())),
+                        ))
+                    }
+                    SurfaceIdWrapper::Window(id) => {
+                        iced_native::Event::Window(*id, window::Event::Focused)
+                    }
+                    SurfaceIdWrapper::Popup(_id) => {
+                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                            wayland::Event::Popup(PopupEvent::Unfocused(id.inner())),
+                        ))
+                    }
+                }),
                 KeyboardEventVariant::Press(p) => keysym_to_vkey(p.keysym).map(|k| {
                     iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
                         key_code: k,

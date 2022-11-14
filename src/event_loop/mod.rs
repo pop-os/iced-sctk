@@ -43,7 +43,10 @@ use sctk::{
 };
 use wayland_backend::client::WaylandError;
 
-use self::{control_flow::ControlFlow, state::{SctkState, LayerSurfaceCreationError}};
+use self::{
+    control_flow::ControlFlow,
+    state::{LayerSurfaceCreationError, SctkState},
+};
 
 // impl SctkSurface {
 //     pub fn hash(&self) -> u64 {

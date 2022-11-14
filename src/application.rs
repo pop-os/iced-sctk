@@ -392,10 +392,11 @@ where
                                 state.set_cursor_position(Point::new(-1.0, -1.0));
                             }
                             PointerEventKind::Motion { .. } => {
-                                state.set_cursor_position(
-                                Point::new(variant.position.0 as f32, variant.position.1 as f32),
-                                );
-                            },
+                                state.set_cursor_position(Point::new(
+                                    variant.position.0 as f32,
+                                    variant.position.1 as f32,
+                                ));
+                            }
                             PointerEventKind::Press { .. }
                             | PointerEventKind::Release { .. }
                             | PointerEventKind::Axis { .. } => {}
@@ -643,7 +644,7 @@ where
                     let native_events: Vec<_> = filtered
                         .into_iter()
                         .filter_map(|e| e.to_native(&mut mods, &surface_ids))
-                        .collect(); 
+                        .collect();
                     let (interface_state, statuses) = {
                         let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
                         user_interface.update(

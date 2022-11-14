@@ -61,7 +61,7 @@ where
                     last_kbd_press: None,
                 });
                 self.seats.last_mut().unwrap()
-            },
+            }
         };
         // TODO data device
         match capability {
