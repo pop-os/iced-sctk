@@ -396,10 +396,23 @@ impl SctkEvent {
             SctkEvent::LayerSurfaceEvent { variant, id } => None,
             SctkEvent::PopupEvent {
                 variant,
-                toplevel_id,
-                parent_id,
                 id,
-            } => None,
+                ..
+            } => {
+                match variant {
+                    PopupEventVariant::Done => {
+                        surface_ids.get(&id).map(|id| {
+                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                                wayland::Event::Popup(PopupEvent::Done(id.inner())),
+                            ))
+                        })
+                    },
+                    PopupEventVariant::Created(_, _) => None, // TODO
+                    PopupEventVariant::WmCapabilities(_) => None, // TODO
+                    PopupEventVariant::Configure(_, _, _) => None, // TODO
+                    PopupEventVariant::RepositionionedPopup { token } => None, // TODO
+                }
+            },
             SctkEvent::NewOutput { id, info } => None,
             SctkEvent::UpdateOutput { id, info } => None,
             SctkEvent::RemovedOutput(_) => None,
