@@ -401,6 +401,7 @@ impl SctkEvent {
             } => {
                 match variant {
                     PopupEventVariant::Done => {
+                        // FIXME ASHLEY at this point the id is no longer tracked in surface_ids
                         surface_ids.get(&id).map(|id| {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
                                 wayland::Event::Popup(PopupEvent::Done(id.inner())),
