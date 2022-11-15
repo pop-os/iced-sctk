@@ -332,8 +332,14 @@ where
             for event in event_sink_back_buffer.drain(..) {
                 match event {
                     SctkEvent::Draw(id) => must_redraw.push(id),
-                    SctkEvent::PopupEvent { variant: PopupEventVariant::Done, toplevel_id, parent_id, id } => {
-                        match self.state
+                    SctkEvent::PopupEvent {
+                        variant: PopupEventVariant::Done,
+                        toplevel_id,
+                        parent_id,
+                        id,
+                    } => {
+                        match self
+                            .state
                             .popups
                             .iter()
                             .position(|s| s.popup.wl_surface().id() == id)
@@ -341,37 +347,72 @@ where
                             Some(p) => {
                                 let _p = self.state.popups.remove(p);
                                 _p.popup.xdg_popup().destroy();
-                                sticky_exit_callback(IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: PopupEventVariant::Done, toplevel_id, parent_id, id }), &self.state, &mut control_flow, &mut callback);
-                            },
+                                sticky_exit_callback(
+                                    IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent {
+                                        variant: PopupEventVariant::Done,
+                                        toplevel_id,
+                                        parent_id,
+                                        id,
+                                    }),
+                                    &self.state,
+                                    &mut control_flow,
+                                    &mut callback,
+                                );
+                            }
                             None => continue,
                         };
-                    },
-                    SctkEvent::LayerSurfaceEvent { variant: LayerSurfaceEventVariant::Done, id } => {
-                        if let Some(i) = self.state.layer_surfaces.iter().position(|l| l.surface.wl_surface().id() == id) {
+                    }
+                    SctkEvent::LayerSurfaceEvent {
+                        variant: LayerSurfaceEventVariant::Done,
+                        id,
+                    } => {
+                        if let Some(i) = self
+                            .state
+                            .layer_surfaces
+                            .iter()
+                            .position(|l| l.surface.wl_surface().id() == id)
+                        {
                             let _l = self.state.layer_surfaces.remove(i);
                             sticky_exit_callback(
-                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent { variant: LayerSurfaceEventVariant::Done, id }),
+                                IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
+                                    variant: LayerSurfaceEventVariant::Done,
+                                    id,
+                                }),
                                 &self.state,
                                 &mut control_flow,
                                 &mut callback,
                             );
                         }
-                    },
-                    SctkEvent::WindowEvent { variant: WindowEventVariant::Close, id } => {
-                        if let Some(i) = self.state.layer_surfaces.iter().position(|l| l.surface.wl_surface().id() == id) {
+                    }
+                    SctkEvent::WindowEvent {
+                        variant: WindowEventVariant::Close,
+                        id,
+                    } => {
+                        if let Some(i) = self
+                            .state
+                            .layer_surfaces
+                            .iter()
+                            .position(|l| l.surface.wl_surface().id() == id)
+                        {
                             let w = self.state.windows.remove(i);
                             w.window.xdg_toplevel().destroy();
                             sticky_exit_callback(
-                                IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Close, id }),
+                                IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent {
+                                    variant: WindowEventVariant::Close,
+                                    id,
+                                }),
                                 &self.state,
                                 &mut control_flow,
                                 &mut callback,
                             );
                         }
-                    },
-                    _ => {
-                        sticky_exit_callback(IcedSctkEvent::SctkEvent(event), &self.state, &mut control_flow, &mut callback)
                     }
+                    _ => sticky_exit_callback(
+                        IcedSctkEvent::SctkEvent(event),
+                        &self.state,
+                        &mut control_flow,
+                        &mut callback,
+                    ),
                 }
             }
 
@@ -385,7 +426,6 @@ where
                 match event {
                     Event::SctkEvent(event) => {
                         sticky_exit_callback(event, &self.state, &mut control_flow, &mut callback)
-                        
                     }
                     Event::LayerSurface(action) => match action {
                         platform_specific::wayland::layer_surface::Action::LayerSurface {

@@ -1,6 +1,7 @@
 use crate::{
+    commands::popup,
     event_loop::state::{self, SctkState, SctkSurface},
-    sctk_event::{PopupEventVariant, SctkEvent}, commands::popup,
+    sctk_event::{PopupEventVariant, SctkEvent},
 };
 use sctk::{delegate_xdg_popup, reexports::client::Proxy, shell::xdg::popup::PopupHandler};
 use std::fmt::Debug;

@@ -94,10 +94,7 @@ where
     /// Returns the widgets to display in the [`Application`].
     ///
     /// These widgets can produce __messages__ based on user interaction.
-    fn view(
-        &self,
-        id: SurfaceIdWrapper,
-    ) -> Element<'_, Self::Message, Self::Renderer>;
+    fn view(&self, id: SurfaceIdWrapper) -> Element<'_, Self::Message, Self::Renderer>;
 
     /// Initializes the [`Application`] with the flags provided to
     /// [`run`] as part of the [`Settings`].
@@ -294,11 +291,7 @@ where
 {
     let mut cache = user_interface::Cache::default();
 
-    let id = match init_id {
-        SurfaceIdWrapper::LayerSurface(id) => id,
-        SurfaceIdWrapper::Window(id) => id,
-        SurfaceIdWrapper::Popup(id) => id,
-    };
+    let init_id_inner = init_id.inner();
     let state = State::new(&application, init_id);
 
     let user_interface = build_user_interface(
@@ -309,11 +302,11 @@ where
         &mut debug,
         init_id,
     );
-    let mut states = HashMap::from([(id, state)]);
-    let mut interfaces = ManuallyDrop::new(HashMap::from([(id, user_interface)]));
+    let mut states = HashMap::from([(init_id_inner, state)]);
+    let mut interfaces = ManuallyDrop::new(HashMap::from([(init_id_inner, user_interface)]));
 
     {
-        let state = states.get(&id).unwrap();
+        let state = states.get(&init_id_inner).unwrap();
 
         run_command(
             &application,
@@ -338,10 +331,11 @@ where
     let mut messages: Vec<A::Message> = Vec::new();
     debug.startup_finished();
 
-    let mut current_context_window = id;
+    let mut current_context_window = init_id_inner;
 
     let mut kbd_surface_id: Option<ObjectId> = None;
     let mut mods = Modifiers::default();
+    let mut destroyed_surface_ids: HashMap<ObjectId, SurfaceIdWrapper> = Default::default();
 
     'main: while let Some(event) = receiver.next().await {
         match event {
@@ -414,11 +408,15 @@ where
                             surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
                         }
                         crate::sctk_event::WindowEventVariant::Close => {
-                            if let Some(id) = surface_ids.remove(&id) {
-                                drop(egl_surfaces.remove(&id.inner()));
-                                interfaces.remove(&id.inner());
-                                states.remove(&id.inner());
-                                application.close_requested(id);
+                            if let Some(surface_id) = surface_ids.remove(&id) {
+                                drop(egl_surfaces.remove(&surface_id.inner()));
+                                interfaces.remove(&surface_id.inner());
+                                states.remove(&surface_id.inner());
+                                application.close_requested(surface_id);
+                                destroyed_surface_ids.insert(id, surface_id);
+                                if exit_on_close_request && surface_id == init_id {
+                                    break 'main;
+                                }
                             }
                         }
                         crate::sctk_event::WindowEventVariant::WmCapabilities(_)
@@ -464,10 +462,15 @@ where
                             surface_ids.insert(id, SurfaceIdWrapper::LayerSurface(native_id));
                         }
                         LayerSurfaceEventVariant::Done => {
-                            if let Some(id) = surface_ids.remove(&id) {
-                                drop(egl_surfaces.remove(&id.inner()));
-                                interfaces.remove(&id.inner());
-                                states.remove(&id.inner());
+                            if let Some(surface_id) = surface_ids.remove(&id) {
+                                drop(egl_surfaces.remove(&surface_id.inner()));
+                                interfaces.remove(&surface_id.inner());
+                                states.remove(&surface_id.inner());
+                                application.close_requested(surface_id);
+                                destroyed_surface_ids.insert(id, surface_id);
+                                if exit_on_close_request && surface_id == init_id {
+                                    break 'main;
+                                }
                             }
                         }
                         LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
@@ -513,10 +516,12 @@ where
                             surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
                         }
                         PopupEventVariant::Done => {
-                            if let Some(id) = surface_ids.remove(&id) {
-                                drop(egl_surfaces.remove(&id.inner()));
-                                interfaces.remove(&id.inner());
-                                states.remove(&id.inner());
+                            if let Some(surface_id) = surface_ids.remove(&id) {
+                                drop(egl_surfaces.remove(&surface_id.inner()));
+                                interfaces.remove(&surface_id.inner());
+                                states.remove(&surface_id.inner());
+                                application.close_requested(surface_id);
+                                destroyed_surface_ids.insert(id, surface_id);
                             }
                         }
                         PopupEventVariant::WmCapabilities(_) => {}
@@ -628,7 +633,9 @@ where
                     debug.event_processing_started();
                     let native_events: Vec<_> = filtered
                         .into_iter()
-                        .filter_map(|e| e.to_native(&mut mods, &surface_ids))
+                        .filter_map(|e| {
+                            e.to_native(&mut mods, &surface_ids, &destroyed_surface_ids)
+                        })
                         .collect();
                     let (interface_state, statuses) = {
                         let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
@@ -693,6 +700,8 @@ where
                     }
                 }
                 events.clear();
+                // clear the destroyed surfaces after they have been handled
+                destroyed_surface_ids.clear();
             }
             IcedSctkEvent::RedrawRequested(id) => {
                 if let Some((native_id, Some(egl_surface), Some(mut user_interface), Some(state))) =
@@ -768,7 +777,7 @@ where
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceIdWrapper {
     LayerSurface(SurfaceId),
     Window(SurfaceId),

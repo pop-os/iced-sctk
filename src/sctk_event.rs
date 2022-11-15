@@ -275,6 +275,7 @@ impl SctkEvent {
         self,
         modifiers: &mut Modifiers,
         surface_ids: &HashMap<ObjectId, SurfaceIdWrapper>,
+        destroyed_surface_ids: &HashMap<ObjectId, SurfaceIdWrapper>,
     ) -> Option<iced_native::Event> {
         match self {
             // TODO Ashley: Platform specific multi-seat events?
@@ -371,7 +372,7 @@ impl SctkEvent {
             SctkEvent::WindowEvent { variant, id } => match variant {
                 // TODO Ashley: platform specific events for window
                 WindowEventVariant::Created(..) => None,
-                WindowEventVariant::Close => surface_ids.get(&id).map(|id| {
+                WindowEventVariant::Close => destroyed_surface_ids.get(&id).map(|id| {
                     iced_native::Event::Window(id.inner(), window::Event::CloseRequested)
                 }),
                 WindowEventVariant::WmCapabilities(_) => None,
@@ -393,27 +394,27 @@ impl SctkEvent {
                     }
                 }
             },
-            SctkEvent::LayerSurfaceEvent { variant, id } => None,
-            SctkEvent::PopupEvent {
-                variant,
-                id,
-                ..
-            } => {
+            SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
+                LayerSurfaceEventVariant::Done => destroyed_surface_ids.get(&id).map(|id| {
+                    iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                        wayland::Event::Layer(LayerEvent::Done(id.inner())),
+                    ))
+                }),
+                _ => None,
+            },
+            SctkEvent::PopupEvent { variant, id, .. } => {
                 match variant {
-                    PopupEventVariant::Done => {
-                        // FIXME ASHLEY at this point the id is no longer tracked in surface_ids
-                        surface_ids.get(&id).map(|id| {
-                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Popup(PopupEvent::Done(id.inner())),
-                            ))
-                        })
-                    },
+                    PopupEventVariant::Done => destroyed_surface_ids.get(&id).map(|id| {
+                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                            wayland::Event::Popup(PopupEvent::Done(id.inner())),
+                        ))
+                    }),
                     PopupEventVariant::Created(_, _) => None, // TODO
                     PopupEventVariant::WmCapabilities(_) => None, // TODO
                     PopupEventVariant::Configure(_, _, _) => None, // TODO
                     PopupEventVariant::RepositionionedPopup { token } => None, // TODO
                 }
-            },
+            }
             SctkEvent::NewOutput { id, info } => None,
             SctkEvent::UpdateOutput { id, info } => None,
             SctkEvent::RemovedOutput(_) => None,
