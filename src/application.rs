@@ -412,7 +412,7 @@ where
                                 drop(egl_surfaces.remove(&surface_id.inner()));
                                 interfaces.remove(&surface_id.inner());
                                 states.remove(&surface_id.inner());
-                                application.close_requested(surface_id);
+                                messages.push(application.close_requested(surface_id));
                                 destroyed_surface_ids.insert(id, surface_id);
                                 if exit_on_close_request && surface_id == init_id {
                                     break 'main;
@@ -466,7 +466,7 @@ where
                                 drop(egl_surfaces.remove(&surface_id.inner()));
                                 interfaces.remove(&surface_id.inner());
                                 states.remove(&surface_id.inner());
-                                application.close_requested(surface_id);
+                                messages.push(application.close_requested(surface_id));
                                 destroyed_surface_ids.insert(id, surface_id);
                                 if exit_on_close_request && surface_id == init_id {
                                     break 'main;
@@ -520,7 +520,7 @@ where
                                 drop(egl_surfaces.remove(&surface_id.inner()));
                                 interfaces.remove(&surface_id.inner());
                                 states.remove(&surface_id.inner());
-                                application.close_requested(surface_id);
+                                messages.push(application.close_requested(surface_id));
                                 destroyed_surface_ids.insert(id, surface_id);
                             }
                         }
