@@ -391,8 +391,7 @@ where
                         KeyboardEventVariant::Enter(object_id) => {
                             kbd_surface_id.replace(object_id);
                         }
-                        KeyboardEventVariant::Press(_) => {}
-                        KeyboardEventVariant::Release(_) => {}
+                        KeyboardEventVariant::Press(_) | KeyboardEventVariant::Release(_) | KeyboardEventVariant::Repeat(_) => {}
                         KeyboardEventVariant::Modifiers(mods) => {
                             if let Some(state) = kbd_surface_id
                                 .as_ref()
@@ -633,7 +632,7 @@ where
                     debug.event_processing_started();
                     let native_events: Vec<_> = filtered
                         .into_iter()
-                        .filter_map(|e| {
+                        .flat_map(|e| {
                             e.to_native(&mut mods, &surface_ids, &destroyed_surface_ids)
                         })
                         .collect();
