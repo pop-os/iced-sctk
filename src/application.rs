@@ -276,6 +276,7 @@ where
     Event::SctkEvent(IcedSctkEvent::UserEvent(e))
 }
 
+// XXX Ashley careful, A, E, C must be exact same as in update, or the subscription map type will have a different hash
 async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
@@ -979,6 +980,7 @@ where
     }
 }
 
+// XXX Ashley careful, A, E, C must be exact same as in run_instance, or the subscription map type will have a different hash
 /// Updates an [`Application`] by feeding it the provided messages, spawning any
 /// resulting [`Command`], and tracking its [`Subscription`]
 pub(crate) fn update<A, E, C>(
