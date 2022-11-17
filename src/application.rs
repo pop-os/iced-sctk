@@ -266,6 +266,16 @@ where
     Ok(())
 }
 
+fn subscription_map<A, E, C>(e: A::Message) -> Event<A::Message>
+where
+    A: Application + 'static,
+    E: Executor + 'static,
+    C: window::GLCompositor<Renderer = A::Renderer> + 'static,
+    <A::Renderer as iced_native::Renderer>::Theme: StyleSheet,
+{
+    Event::SctkEvent(IcedSctkEvent::UserEvent(e))
+}
+
 async fn run_instance<A, E, C>(
     mut application: A,
     mut compositor: C,
@@ -323,7 +333,7 @@ where
     runtime.track(
         application
             .subscription()
-            .map(|e| Event::SctkEvent(IcedSctkEvent::UserEvent(e))),
+            .map(subscription_map::<A, E, C>),
     );
 
     let mut mouse_interaction = mouse::Interaction::default();
@@ -668,7 +678,7 @@ where
                             .collect();
 
                         // Update application
-                        update(
+                        update::<A, E, C>(
                             &mut application,
                             &mut cache,
                             state,
@@ -971,7 +981,7 @@ where
 
 /// Updates an [`Application`] by feeding it the provided messages, spawning any
 /// resulting [`Command`], and tracking its [`Subscription`]
-pub(crate) fn update<A: Application, E: Executor>(
+pub(crate) fn update<A, E, C>(
     application: &mut A,
     cache: &mut user_interface::Cache,
     state: &State<A>,
@@ -982,7 +992,10 @@ pub(crate) fn update<A: Application, E: Executor>(
     messages: &mut Vec<A::Message>,
     graphics_info: impl FnOnce() -> compositor::Information + Copy,
 ) where
-    <A::Renderer as crate::Renderer>::Theme: StyleSheet,
+    A: Application + 'static,
+    E: Executor + 'static,
+    C: window::GLCompositor<Renderer = A::Renderer> + 'static,
+    <A::Renderer as iced_native::Renderer>::Theme: StyleSheet,
 {
     for message in messages.drain(..) {
         debug.log_message(&message);
@@ -1004,10 +1017,9 @@ pub(crate) fn update<A: Application, E: Executor>(
         );
     }
 
-    let subscription = application
+    runtime.track(application
         .subscription()
-        .map(|m| Event::SctkEvent(IcedSctkEvent::UserEvent(m)));
-    runtime.track(subscription);
+        .map(subscription_map::<A, E, C>));
 }
 
 /// Runs the actions of a [`Command`].
