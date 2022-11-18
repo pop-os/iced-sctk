@@ -64,7 +64,7 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {
-                variant: KeyboardEventVariant::Enter(surface.id()),
+                variant: KeyboardEventVariant::Leave(surface.id()),
                 kbd_id,
                 seat_id,
             })
@@ -124,7 +124,7 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {
-                variant: KeyboardEventVariant::Press(event),
+                variant: KeyboardEventVariant::Release(event),
                 kbd_id,
                 seat_id,
             });

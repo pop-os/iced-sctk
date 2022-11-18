@@ -650,7 +650,7 @@ where
                     let (interface_state, statuses) = {
                         let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
                         user_interface.update(
-                            native_events.as_slice(), // TODO Ashley: pass filtered events & add platform specific events to iced_native
+                            native_events.as_slice(),
                             cursor_position,
                             &mut renderer,
                             &mut Null,
