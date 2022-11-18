@@ -59,8 +59,7 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         };
         let seat_id = my_seat.seat.id();
         let kbd_id = keyboard.id();
-        let surface_id = surface.id();
-        my_seat.kbd_focus.replace(surface.clone());
+        my_seat.kbd_focus.take();
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {

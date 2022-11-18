@@ -392,9 +392,7 @@ where
                         }
                     }
                     SctkEvent::KeyboardEvent {
-                        variant,
-                        kbd_id,
-                        seat_id,
+                        variant, ..
                     } => match variant {
                         KeyboardEventVariant::Leave(_) => {
                             kbd_surface_id.take();
@@ -603,8 +601,11 @@ where
                         SctkEvent::PointerEvent { variant, .. } => {
                             (&variant.surface.id() == object_id, false)
                         }
-                        SctkEvent::KeyboardEvent { .. } => {
-                            (kbd_surface_id.as_ref() == Some(&object_id), false)
+                        SctkEvent::KeyboardEvent { variant, .. } => {
+                            match variant {
+                                KeyboardEventVariant::Leave(id) => (id == object_id, false),
+                                _ => (kbd_surface_id.as_ref() == Some(&object_id), false)
+                            }
                         }
                         SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
                         SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
