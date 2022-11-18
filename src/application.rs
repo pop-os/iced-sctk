@@ -322,7 +322,7 @@ where
         run_command(
             &application,
             &mut cache,
-            state,
+            Some(state),
             &mut renderer,
             init_command,
             &mut runtime,
@@ -589,106 +589,143 @@ where
                 }
             }
             IcedSctkEvent::MainEventsCleared => {
-                let mut needs_redraw = false;
-                for (object_id, surface_id) in &surface_ids {
-                    // returns (remove, copy)
-                    let filter_events = |e: &SctkEvent| match e {
-                        SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
-                        SctkEvent::PointerEvent { variant, .. } => {
-                            (&variant.surface.id() == object_id, false)
-                        }
-                        SctkEvent::KeyboardEvent { variant, .. } => match variant {
-                            KeyboardEventVariant::Leave(id) => (id == object_id, false),
-                            _ => (kbd_surface_id.as_ref() == Some(&object_id), false),
-                        },
-                        SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
-                        SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
-                        SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
-                        SctkEvent::NewOutput { .. }
-                        | SctkEvent::UpdateOutput { .. }
-                        | SctkEvent::RemovedOutput(_) => (false, true),
-                        SctkEvent::Draw(_) => unimplemented!(),
-                        SctkEvent::ScaleFactorChanged { id, .. } => (id == object_id, false),
-                    };
-                    let mut filtered = Vec::with_capacity(events.len());
-                    let mut i = 0;
-
-                    while i < events.len() {
-                        let (remove, copy) = filter_events(&mut events[i]);
-                        if remove {
-                            filtered.push(events.remove(i));
-                        } else if copy {
-                            filtered.push(events[i].clone());
-                            i += 1;
-                        } else {
-                            i += 1;
-                        }
-                    }
-                    let cursor_position = match states.get(&surface_id.inner()) {
-                        Some(s) => s.cursor_position(),
-                        None => continue,
-                    };
-                    if filtered.is_empty() && messages.is_empty() {
-                        continue;
-                    } else {
-                        ev_proxy.send_event(Event::SctkEvent(IcedSctkEvent::RedrawRequested(
-                            object_id.clone(),
-                        )));
-                    }
-                    debug.event_processing_started();
-                    let native_events: Vec<_> = filtered
-                        .into_iter()
-                        .flat_map(|e| e.to_native(&mut mods, &surface_ids, &destroyed_surface_ids))
+                if surface_ids.is_empty() && !messages.is_empty() {
+                    // Update application
+                    let pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
+                        .drain()
+                        .map(|(id, interface)| (id, interface.into_cache()))
                         .collect();
-                    let (interface_state, statuses) = {
-                        let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
-                        user_interface.update(
-                            native_events.as_slice(),
-                            cursor_position,
-                            &mut renderer,
-                            &mut Null,
-                            &mut messages,
-                        )
-                    };
-                    debug.event_processing_finished();
-                    for event in native_events.into_iter().zip(statuses.into_iter()) {
-                        runtime.broadcast(event);
+
+                    // Update application
+                    update::<A, E, C>(
+                        &mut application,
+                        &mut cache,
+                        None,
+                        &mut renderer,
+                        &mut runtime,
+                        &mut ev_proxy,
+                        &mut debug,
+                        &mut messages,
+                        || compositor.fetch_information(),
+                    );
+
+                    interfaces = ManuallyDrop::new(build_user_interfaces(
+                        &application,
+                        &mut renderer,
+                        &mut debug,
+                        &states,
+                        pure_states,
+                    ));
+
+                    if application.should_exit() {
+                        break 'main;
                     }
-                    if !messages.is_empty()
-                        || matches!(interface_state, user_interface::State::Outdated)
-                    {
-                        needs_redraw = true;
-                    }
-                }
-                if needs_redraw {
-                    for (_object_id, surface_id) in &surface_ids {
-                        let state = match states.get_mut(&surface_id.inner()) {
-                            Some(s) => s,
+                } else {
+                    let mut needs_redraw = false;
+                    for (object_id, surface_id) in &surface_ids {
+                        // returns (remove, copy)
+                        let filter_events = |e: &SctkEvent| match e {
+                            SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::PointerEvent { variant, .. } => {
+                                (&variant.surface.id() == object_id, false)
+                            }
+                            SctkEvent::KeyboardEvent { variant, .. } => match variant {
+                                KeyboardEventVariant::Leave(id) => (id == object_id, false),
+                                _ => (kbd_surface_id.as_ref() == Some(&object_id), false),
+                            },
+                            SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::NewOutput { .. }
+                            | SctkEvent::UpdateOutput { .. }
+                            | SctkEvent::RemovedOutput(_) => (false, true),
+                            SctkEvent::Draw(_) => unimplemented!(),
+                            SctkEvent::ScaleFactorChanged { id, .. } => (id == object_id, false),
+                        };
+                        let mut filtered = Vec::with_capacity(events.len());
+                        let mut i = 0;
+
+                        while i < events.len() {
+                            let (remove, copy) = filter_events(&mut events[i]);
+                            if remove {
+                                filtered.push(events.remove(i));
+                            } else if copy {
+                                filtered.push(events[i].clone());
+                                i += 1;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        let cursor_position = match states.get(&surface_id.inner()) {
+                            Some(s) => s.cursor_position(),
                             None => continue,
                         };
+                        if filtered.is_empty() && messages.is_empty() {
+                            continue;
+                        } else {
+                            ev_proxy.send_event(Event::SctkEvent(IcedSctkEvent::RedrawRequested(
+                                object_id.clone(),
+                            )));
+                        }
+                        debug.event_processing_started();
+                        let native_events: Vec<_> = filtered
+                            .into_iter()
+                            .flat_map(|e| {
+                                e.to_native(&mut mods, &surface_ids, &destroyed_surface_ids)
+                            })
+                            .collect();
+                        let (interface_state, statuses) = {
+                            let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
+                            user_interface.update(
+                                native_events.as_slice(),
+                                cursor_position,
+                                &mut renderer,
+                                &mut Null,
+                                &mut messages,
+                            )
+                        };
+                        debug.event_processing_finished();
+                        for event in native_events.into_iter().zip(statuses.into_iter()) {
+                            runtime.broadcast(event);
+                        }
+                        if !messages.is_empty()
+                            || matches!(interface_state, user_interface::State::Outdated)
+                        {
+                            needs_redraw = true;
+                        }
+                    }
+                    if needs_redraw {
                         let pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
                             .drain()
                             .map(|(id, interface)| (id, interface.into_cache()))
                             .collect();
 
-                        // Update application
-                        update::<A, E, C>(
-                            &mut application,
-                            &mut cache,
-                            state,
-                            &mut renderer,
-                            &mut runtime,
-                            &mut ev_proxy,
-                            &mut debug,
-                            &mut messages,
-                            || compositor.fetch_information(),
-                        );
+                        for (_object_id, surface_id) in &surface_ids {
+                            let state = match states.get_mut(&surface_id.inner()) {
+                                Some(s) => s,
+                                None => continue,
+                            };
 
-                        // Update state
-                        state.synchronize(&application);
+                            // Update application
+                            update::<A, E, C>(
+                                &mut application,
+                                &mut cache,
+                                Some(state),
+                                &mut renderer,
+                                &mut runtime,
+                                &mut ev_proxy,
+                                &mut debug,
+                                &mut messages,
+                                || compositor.fetch_information(),
+                            );
 
-                        let should_exit = application.should_exit();
+                            // Update state
+                            state.synchronize(&application);
 
+                            if application.should_exit() {
+                                break 'main;
+                            }
+                        }
                         interfaces = ManuallyDrop::new(build_user_interfaces(
                             &application,
                             &mut renderer,
@@ -696,10 +733,6 @@ where
                             &states,
                             pure_states,
                         ));
-
-                        if should_exit {
-                            break 'main;
-                        }
                     }
                 }
                 events.clear();
@@ -979,7 +1012,7 @@ where
 pub(crate) fn update<A, E, C>(
     application: &mut A,
     cache: &mut user_interface::Cache,
-    state: &State<A>,
+    state: Option<&State<A>>,
     renderer: &mut A::Renderer,
     runtime: &mut Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
     proxy: &mut proxy::Proxy<Event<A::Message>>,
@@ -1019,7 +1052,7 @@ pub(crate) fn update<A, E, C>(
 fn run_command<A, E>(
     application: &A,
     cache: &mut user_interface::Cache,
-    state: &State<A>,
+    state: Option<&State<A>>,
     renderer: &mut A::Renderer,
     command: Command<A::Message>,
     runtime: &mut Runtime<E, proxy::Proxy<Event<A::Message>>, Event<A::Message>>,
@@ -1033,8 +1066,6 @@ fn run_command<A, E>(
 {
     use iced_native::command;
     use iced_native::system;
-
-    let id = &state.id;
 
     for action in command.actions() {
         match action {
@@ -1074,6 +1105,12 @@ fn run_command<A, E>(
                 }
             },
             command::Action::Widget(action) => {
+                let state = match state {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let id = &state.id;
+
                 let mut current_cache = std::mem::take(cache);
                 let mut current_operation = Some(action.into_operation());
 
