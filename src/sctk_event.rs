@@ -350,29 +350,31 @@ impl SctkEvent {
                         ))
                     }
                 }).into_iter().collect(),
-                KeyboardEventVariant::Press(p) => {
-                    if let Some(s) = p.utf8 {
-                        s.chars().map(|c| iced_native::Event::Keyboard(keyboard::Event::CharacterReceived(c))).collect()
-                    } else {
-                        keysym_to_vkey(p.keysym).map(|k| {
-                            iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
-                                key_code: k,
-                                modifiers: modifiers_to_native(*modifiers),
-                            })
-                        }).into_iter().collect()
+                KeyboardEventVariant::Press(ke) => {
+                    let mut events: Vec<_> = keysym_to_vkey(ke.keysym).map(|k| {
+                        iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
+                            key_code: k,
+                            modifiers: modifiers_to_native(*modifiers),
+                        })
+                    }).into_iter().collect();
+                    if let Some(s) = ke.utf8 {
+                        let mut chars = s.chars().map(|c| iced_native::Event::Keyboard(keyboard::Event::CharacterReceived(c))).collect();
+                        events.append(&mut chars);
                     }
+                    events
                 },
                 KeyboardEventVariant::Repeat(ke) => {
+                    let mut events: Vec<_> = keysym_to_vkey(ke.keysym).map(|k| {
+                        iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
+                            key_code: k,
+                            modifiers: modifiers_to_native(*modifiers),
+                        })
+                    }).into_iter().collect();
                     if let Some(s) = ke.utf8 {
-                        s.chars().map(|c| iced_native::Event::Keyboard(keyboard::Event::CharacterReceived(c))).collect()
-                    } else {
-                        keysym_to_vkey(ke.keysym).map(|k| {
-                            iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
-                                key_code: k,
-                                modifiers: modifiers_to_native(*modifiers),
-                            })
-                        }).into_iter().collect()
+                        let mut chars = s.chars().map(|c| iced_native::Event::Keyboard(keyboard::Event::CharacterReceived(c))).collect();
+                        events.append(&mut chars);
                     }
+                    events
                 },
                 KeyboardEventVariant::Release(k) => keysym_to_vkey(k.keysym).map(|k| {
                     iced_native::Event::Keyboard(keyboard::Event::KeyReleased {
