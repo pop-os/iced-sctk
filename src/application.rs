@@ -695,7 +695,7 @@ where
                         }
                     }
                     if needs_redraw {
-                        let pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
+                        let mut pure_states: HashMap<_, _> = ManuallyDrop::into_inner(interfaces)
                             .drain()
                             .map(|(id, interface)| (id, interface.into_cache()))
                             .collect();
@@ -705,11 +705,15 @@ where
                                 Some(s) => s,
                                 None => continue,
                             };
+                            let cache = match pure_states.get_mut(&surface_id.inner()) {
+                                Some(cache) => cache,
+                                None => continue,
+                            };
 
                             // Update application
                             update::<A, E, C>(
                                 &mut application,
-                                &mut cache,
+                                cache,
                                 Some(state),
                                 &mut renderer,
                                 &mut runtime,
