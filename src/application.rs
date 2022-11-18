@@ -331,11 +331,7 @@ where
             || compositor.fetch_information(),
         );
     }
-    runtime.track(
-        application
-            .subscription()
-            .map(subscription_map::<A, E, C>),
-    );
+    runtime.track(application.subscription().map(subscription_map::<A, E, C>));
 
     let mut mouse_interaction = mouse::Interaction::default();
     let mut events: Vec<SctkEvent> = Vec::new();
@@ -391,16 +387,16 @@ where
                             | PointerEventKind::Axis { .. } => {}
                         }
                     }
-                    SctkEvent::KeyboardEvent {
-                        variant, ..
-                    } => match variant {
+                    SctkEvent::KeyboardEvent { variant, .. } => match variant {
                         KeyboardEventVariant::Leave(_) => {
                             kbd_surface_id.take();
                         }
                         KeyboardEventVariant::Enter(object_id) => {
                             kbd_surface_id.replace(object_id);
                         }
-                        KeyboardEventVariant::Press(_) | KeyboardEventVariant::Release(_) | KeyboardEventVariant::Repeat(_) => {}
+                        KeyboardEventVariant::Press(_)
+                        | KeyboardEventVariant::Release(_)
+                        | KeyboardEventVariant::Repeat(_) => {}
                         KeyboardEventVariant::Modifiers(mods) => {
                             if let Some(state) = kbd_surface_id
                                 .as_ref()
@@ -601,12 +597,10 @@ where
                         SctkEvent::PointerEvent { variant, .. } => {
                             (&variant.surface.id() == object_id, false)
                         }
-                        SctkEvent::KeyboardEvent { variant, .. } => {
-                            match variant {
-                                KeyboardEventVariant::Leave(id) => (id == object_id, false),
-                                _ => (kbd_surface_id.as_ref() == Some(&object_id), false)
-                            }
-                        }
+                        SctkEvent::KeyboardEvent { variant, .. } => match variant {
+                            KeyboardEventVariant::Leave(id) => (id == object_id, false),
+                            _ => (kbd_surface_id.as_ref() == Some(&object_id), false),
+                        },
                         SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
                         SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
                         SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
@@ -644,9 +638,7 @@ where
                     debug.event_processing_started();
                     let native_events: Vec<_> = filtered
                         .into_iter()
-                        .flat_map(|e| {
-                            e.to_native(&mut mods, &surface_ids, &destroyed_surface_ids)
-                        })
+                        .flat_map(|e| e.to_native(&mut mods, &surface_ids, &destroyed_surface_ids))
                         .collect();
                     let (interface_state, statuses) = {
                         let user_interface = interfaces.get_mut(&surface_id.inner()).unwrap();
@@ -1020,9 +1012,7 @@ pub(crate) fn update<A, E, C>(
         );
     }
 
-    runtime.track(application
-        .subscription()
-        .map(subscription_map::<A, E, C>));
+    runtime.track(application.subscription().map(subscription_map::<A, E, C>));
 }
 
 /// Runs the actions of a [`Command`].

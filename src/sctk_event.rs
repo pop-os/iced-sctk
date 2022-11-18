@@ -13,7 +13,8 @@ use iced_native::{
         wayland::{self, LayerEvent, PopupEvent},
         PlatformSpecific,
     },
-    keyboard, mouse,
+    keyboard::{self, KeyCode},
+    mouse,
     window::{self, Id as SurfaceId},
 };
 use sctk::{
@@ -298,28 +299,35 @@ impl SctkEvent {
                     button,
                     serial: _,
                 } => pointer_button_to_native(button)
-                    .map(|b| iced_native::Event::Mouse(mouse::Event::ButtonPressed(b))).into_iter().collect(), // TODO Ashley: conversion
+                    .map(|b| iced_native::Event::Mouse(mouse::Event::ButtonPressed(b)))
+                    .into_iter()
+                    .collect(), // TODO Ashley: conversion
                 PointerEventKind::Release {
                     time: _,
                     button,
                     serial: _,
                 } => pointer_button_to_native(button)
-                    .map(|b| iced_native::Event::Mouse(mouse::Event::ButtonReleased(b))).into_iter().collect(), // TODO Ashley: conversion
+                    .map(|b| iced_native::Event::Mouse(mouse::Event::ButtonReleased(b)))
+                    .into_iter()
+                    .collect(), // TODO Ashley: conversion
                 PointerEventKind::Axis {
                     time: _,
                     horizontal,
                     vertical,
                     source,
                 } => pointer_axis_to_native(source, horizontal, vertical)
-                    .map(|a| iced_native::Event::Mouse(mouse::Event::WheelScrolled { delta: a })).into_iter().collect(), // TODO Ashley: conversion
+                    .map(|a| iced_native::Event::Mouse(mouse::Event::WheelScrolled { delta: a }))
+                    .into_iter()
+                    .collect(), // TODO Ashley: conversion
             },
             SctkEvent::KeyboardEvent {
                 variant,
                 kbd_id: _,
                 seat_id: _,
             } => match variant {
-                KeyboardEventVariant::Leave(id) => {
-                    surface_ids.get(&id).map(|id| match id {
+                KeyboardEventVariant::Leave(id) => surface_ids
+                    .get(&id)
+                    .map(|id| match id {
                         SurfaceIdWrapper::LayerSurface(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
                                 wayland::Event::Layer(LayerEvent::Unfocused(id.inner())),
@@ -333,55 +341,97 @@ impl SctkEvent {
                                 wayland::Event::Popup(PopupEvent::Unfocused(id.inner())),
                             ))
                         }
-                    }).into_iter().collect()
-                }
-                KeyboardEventVariant::Enter(id) => surface_ids.get(&id).map(|id| match id {
-                    SurfaceIdWrapper::LayerSurface(_id) => {
-                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                            wayland::Event::Layer(LayerEvent::Focused(id.inner())),
-                        ))
-                    }
-                    SurfaceIdWrapper::Window(id) => {
-                        iced_native::Event::Window(*id, window::Event::Focused)
-                    }
-                    SurfaceIdWrapper::Popup(_id) => {
-                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                            wayland::Event::Popup(PopupEvent::Focused(id.inner())),
-                        ))
-                    }
-                }).into_iter().collect(),
-                KeyboardEventVariant::Press(ke) => {
-                    let mut events: Vec<_> = keysym_to_vkey(ke.keysym).map(|k| {
-                        iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
-                            key_code: k,
-                            modifiers: modifiers_to_native(*modifiers),
-                        })
-                    }).into_iter().collect();
-                    if let Some(s) = ke.utf8 {
-                        let mut chars = s.chars().map(|c| iced_native::Event::Keyboard(keyboard::Event::CharacterReceived(c))).collect();
-                        events.append(&mut chars);
-                    }
-                    events
-                },
-                KeyboardEventVariant::Repeat(ke) => {
-                    let mut events: Vec<_> = keysym_to_vkey(ke.keysym).map(|k| {
-                        iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
-                            key_code: k,
-                            modifiers: modifiers_to_native(*modifiers),
-                        })
-                    }).into_iter().collect();
-                    if let Some(s) = ke.utf8 {
-                        let mut chars = s.chars().map(|c| iced_native::Event::Keyboard(keyboard::Event::CharacterReceived(c))).collect();
-                        events.append(&mut chars);
-                    }
-                    events
-                },
-                KeyboardEventVariant::Release(k) => keysym_to_vkey(k.keysym).map(|k| {
-                    iced_native::Event::Keyboard(keyboard::Event::KeyReleased {
-                        key_code: k,
-                        modifiers: modifiers_to_native(*modifiers),
                     })
-                }).into_iter().collect(),
+                    .into_iter()
+                    .collect(),
+                KeyboardEventVariant::Enter(id) => surface_ids
+                    .get(&id)
+                    .map(|id| match id {
+                        SurfaceIdWrapper::LayerSurface(_id) => {
+                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                                wayland::Event::Layer(LayerEvent::Focused(id.inner())),
+                            ))
+                        }
+                        SurfaceIdWrapper::Window(id) => {
+                            iced_native::Event::Window(*id, window::Event::Focused)
+                        }
+                        SurfaceIdWrapper::Popup(_id) => {
+                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                                wayland::Event::Popup(PopupEvent::Focused(id.inner())),
+                            ))
+                        }
+                    })
+                    .into_iter()
+                    .collect(),
+                KeyboardEventVariant::Press(ke) => {
+                    let mut skip_char = false;
+
+                    let mut events: Vec<_> = keysym_to_vkey(ke.keysym)
+                        .map(|k| {
+                            if k == KeyCode::Backspace {
+                                skip_char = true;
+                            }
+                            iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
+                                key_code: k,
+                                modifiers: modifiers_to_native(*modifiers),
+                            })
+                        })
+                        .into_iter()
+                        .collect();
+                    if !skip_char {
+                        if let Some(s) = ke.utf8 {
+                            let mut chars = s
+                                .chars()
+                                .map(|c| {
+                                    iced_native::Event::Keyboard(
+                                        keyboard::Event::CharacterReceived(c),
+                                    )
+                                })
+                                .collect();
+                            events.append(&mut chars);
+                        }
+                    }
+                    events
+                }
+                KeyboardEventVariant::Repeat(ke) => {
+                    let mut skip_char = false;
+
+                    let mut events: Vec<_> = keysym_to_vkey(ke.keysym)
+                        .map(|k| {
+                            if k == KeyCode::Backspace {
+                                skip_char = true;
+                            }
+                            iced_native::Event::Keyboard(keyboard::Event::KeyPressed {
+                                key_code: k,
+                                modifiers: modifiers_to_native(*modifiers),
+                            })
+                        })
+                        .into_iter()
+                        .collect();
+                    if !skip_char {
+                        if let Some(s) = ke.utf8 {
+                            let mut chars = s
+                                .chars()
+                                .map(|c| {
+                                    iced_native::Event::Keyboard(
+                                        keyboard::Event::CharacterReceived(c),
+                                    )
+                                })
+                                .collect();
+                            events.append(&mut chars);
+                        }
+                    }
+                    events
+                }
+                KeyboardEventVariant::Release(k) => keysym_to_vkey(k.keysym)
+                    .map(|k| {
+                        iced_native::Event::Keyboard(keyboard::Event::KeyReleased {
+                            key_code: k,
+                            modifiers: modifiers_to_native(*modifiers),
+                        })
+                    })
+                    .into_iter()
+                    .collect(),
                 KeyboardEventVariant::Modifiers(new_mods) => {
                     *modifiers = new_mods;
                     vec![iced_native::Event::Keyboard(
@@ -392,43 +442,57 @@ impl SctkEvent {
             SctkEvent::WindowEvent { variant, id } => match variant {
                 // TODO Ashley: platform specific events for window
                 WindowEventVariant::Created(..) => Default::default(),
-                WindowEventVariant::Close => destroyed_surface_ids.get(&id).map(|id| {
-                    iced_native::Event::Window(id.inner(), window::Event::CloseRequested)
-                }).into_iter().collect(),
+                WindowEventVariant::Close => destroyed_surface_ids
+                    .get(&id)
+                    .map(|id| iced_native::Event::Window(id.inner(), window::Event::CloseRequested))
+                    .into_iter()
+                    .collect(),
                 WindowEventVariant::WmCapabilities(_) => Default::default(),
                 WindowEventVariant::ConfigureBounds { .. } => Default::default(),
                 WindowEventVariant::Configure(configure, _, _) => {
                     if configure.is_resizing() {
                         let new_size = configure.new_size.unwrap();
-                        surface_ids.get(&id).map(|id| {
-                            iced_native::Event::Window(
-                                id.inner(),
-                                window::Event::Resized {
-                                    width: new_size.0,
-                                    height: new_size.1,
-                                },
-                            )
-                        }).into_iter().collect()
+                        surface_ids
+                            .get(&id)
+                            .map(|id| {
+                                iced_native::Event::Window(
+                                    id.inner(),
+                                    window::Event::Resized {
+                                        width: new_size.0,
+                                        height: new_size.1,
+                                    },
+                                )
+                            })
+                            .into_iter()
+                            .collect()
                     } else {
                         Default::default()
                     }
                 }
             },
             SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
-                LayerSurfaceEventVariant::Done => destroyed_surface_ids.get(&id).map(|id| {
-                    iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                        wayland::Event::Layer(LayerEvent::Done(id.inner())),
-                    ))
-                }).into_iter().collect(),
+                LayerSurfaceEventVariant::Done => destroyed_surface_ids
+                    .get(&id)
+                    .map(|id| {
+                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                            wayland::Event::Layer(LayerEvent::Done(id.inner())),
+                        ))
+                    })
+                    .into_iter()
+                    .collect(),
                 _ => Default::default(),
             },
             SctkEvent::PopupEvent { variant, id, .. } => {
                 match variant {
-                    PopupEventVariant::Done => destroyed_surface_ids.get(&id).map(|id| {
-                        iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                            wayland::Event::Popup(PopupEvent::Done(id.inner())),
-                        ))
-                    }).into_iter().collect(),
+                    PopupEventVariant::Done => destroyed_surface_ids
+                        .get(&id)
+                        .map(|id| {
+                            iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                                wayland::Event::Popup(PopupEvent::Done(id.inner())),
+                            ))
+                        })
+                        .into_iter()
+                        .collect(),
                     PopupEventVariant::Created(_, _) => Default::default(), // TODO
                     PopupEventVariant::WmCapabilities(_) => Default::default(), // TODO
                     PopupEventVariant::Configure(_, _, _) => Default::default(), // TODO

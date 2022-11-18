@@ -1,6 +1,6 @@
 use crate::{
     event_loop::{state::SctkSeat, state::SctkState},
-    sctk_event::{SctkEvent, SeatEventVariant, KeyboardEventVariant},
+    sctk_event::{KeyboardEventVariant, SctkEvent, SeatEventVariant},
 };
 use iced_native::keyboard::Modifiers;
 use sctk::{delegate_seat, reexports::client::Proxy, seat::SeatHandler};
@@ -66,7 +66,8 @@ where
         // TODO data device
         match capability {
             sctk::seat::Capability::Keyboard => {
-                if let Ok((kbd, source)) = self.seat_state.get_keyboard_with_repeat(qh, &seat, None) {
+                if let Ok((kbd, source)) = self.seat_state.get_keyboard_with_repeat(qh, &seat, None)
+                {
                     self.sctk_events.push(SctkEvent::SeatEvent {
                         variant: SeatEventVariant::NewCapability(capability, kbd.id()),
                         id: seat.id(),
@@ -74,14 +75,14 @@ where
                     let kbd_id = kbd.id();
                     let seat_id = seat.id();
                     self.loop_handle
-                    .insert_source(source, move |e, _, state| {
-                        state.sctk_events.push(SctkEvent::KeyboardEvent {
-                            variant: KeyboardEventVariant::Repeat(e),
-                            kbd_id: kbd_id.clone(),
-                            seat_id: seat_id.clone(),
-                        });
-                    })
-                    .expect("Failed to insert the repeating keyboard into the event loop");
+                        .insert_source(source, move |e, _, state| {
+                            state.sctk_events.push(SctkEvent::KeyboardEvent {
+                                variant: KeyboardEventVariant::Repeat(e),
+                                kbd_id: kbd_id.clone(),
+                                seat_id: seat_id.clone(),
+                            });
+                        })
+                        .expect("Failed to insert the repeating keyboard into the event loop");
                     my_seat.kbd.replace(kbd);
                 }
             }
