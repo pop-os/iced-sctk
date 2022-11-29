@@ -255,9 +255,7 @@ where
         );
 
         if let Some(parent) = self.layer_surfaces.iter().find(|l| l.id == settings.parent) {
-            let wl_surface = self
-                .compositor_state
-                .create_surface(&self.queue_handle);
+            let wl_surface = self.compositor_state.create_surface(&self.queue_handle);
             let popup = Popup::from_surface(
                 None,
                 &positioner,
@@ -365,9 +363,7 @@ where
         // TODO Ashley: set icon
         // TODO Ashley: save settings for window
         // TODO Ashley: decorations
-        let wl_surface = self
-            .compositor_state
-            .create_surface(&self.queue_handle);
+        let wl_surface = self.compositor_state.create_surface(&self.queue_handle);
         let mut builder = if let Some(app_id) = app_id {
             Window::builder().app_id(app_id)
         } else {
@@ -435,9 +431,7 @@ where
             .layer_shell
             .as_ref()
             .ok_or(LayerSurfaceCreationError::LayerShellNotSupported)?;
-        let wl_surface = self
-            .compositor_state
-            .create_surface(&self.queue_handle);
+        let wl_surface = self.compositor_state.create_surface(&self.queue_handle);
 
         let layer_surface = LayerSurface::builder()
             .anchor(anchor)

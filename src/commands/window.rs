@@ -8,7 +8,7 @@ use iced_native::command::platform_specific::{
 };
 use iced_native::window;
 
-pub use window::{Action, Id};
+pub use window::Action;
 pub use window::{Event, Mode};
 
 pub fn get_window<Message>(builder: SctkWindowSettings) -> Command<Message> {

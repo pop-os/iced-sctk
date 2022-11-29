@@ -453,7 +453,7 @@ where
                         } => {
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.requested_size = (width, height);
-                                layer_surface.surface.set_size(width.unwrap_or_default(), height.unwrap_or_default())
+                                layer_surface.surface.set_size(width.unwrap_or_default(), height.unwrap_or_default());
                             }
                         },
                         platform_specific::wayland::layer_surface::Action::Destroy(id) => {
@@ -674,17 +674,22 @@ where
                 if let Some(i) = must_redraw.iter().position(|a_id| a_id == surface_id) {
                     must_redraw.remove(i);
                 }
+                let wl_suface = self
+                    .state
+                    .windows
+                    .iter()
+                    .map(|w| w.window.wl_surface())
+                    .chain(
+                        self.state
+                            .layer_surfaces
+                            .iter()
+                            .map(|l| l.surface.wl_surface()),
+                    )
+                    .find(|s| s.id() == *surface_id)
+                    .unwrap();
+
                 // Handle refresh of the frame.
                 if surface_request.refresh_frame {
-                    //TODO
-                    let window_handle = self
-                        .state
-                        .windows
-                        .iter()
-                        .find(|w| w.window.wl_surface().id() == *surface_id)
-                        .unwrap();
-                    // window_handle.window.refresh();
-
                     // In general refreshing the frame requires surface commit, those force user
                     // to redraw.
                     surface_request.redraw_requested = true;
@@ -699,6 +704,7 @@ where
                         &mut callback,
                     );
                 }
+                wl_suface.commit();
             }
 
             for id in must_redraw {
@@ -708,13 +714,20 @@ where
                     &mut control_flow,
                     &mut callback,
                 );
-                if let Some(layer_surface) = self
+                if let Some(wl_suface) = self
                     .state
-                    .layer_surfaces
+                    .windows
                     .iter()
-                    .find(|l| l.surface.wl_surface().id() == id)
+                    .map(|w| w.window.wl_surface())
+                    .chain(
+                        self.state
+                            .layer_surfaces
+                            .iter()
+                            .map(|l| l.surface.wl_surface()),
+                    )
+                    .find(|s| s.id() == id)
                 {
-                    layer_surface.surface.wl_surface().commit();
+                    wl_suface.commit()
                 }
             }
 
