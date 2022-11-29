@@ -65,7 +65,6 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
             .replace(LogicalSize::new(configure.new_size.0, configure.new_size.1));
         let first = layer.last_configure.is_none();
         layer.last_configure.replace(configure.clone());
-        layer.surface.wl_surface().commit();
 
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
             variant: LayerSurfaceEventVariant::Configure(

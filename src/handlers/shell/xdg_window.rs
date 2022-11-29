@@ -56,7 +56,7 @@ impl<T: Debug> WindowHandler for SctkState<T> {
         let id = wl_surface.id();
         let first = window.last_configure.is_none();
         window.last_configure.replace(configure.clone());
-        wl_surface.commit();
+
         self.sctk_events.push(SctkEvent::WindowEvent {
             variant: WindowEventVariant::Configure(configure, wl_surface.clone(), first),
             id,

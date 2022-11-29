@@ -422,6 +422,7 @@ where
                 .pending_user_events
                 .drain(..)
                 .partition(|e| matches!(e, Event::SctkEvent(_)));
+            let mut to_commit = HashMap::new();
             for event in sctk_events.into_iter().chain(user_events.into_iter()) {
                 match event {
                     Event::SctkEvent(event) => {
@@ -454,6 +455,7 @@ where
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.requested_size = (width, height);
                                 layer_surface.surface.set_size(width.unwrap_or_default(), height.unwrap_or_default());
+                                to_commit.insert(id, layer_surface.surface.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::layer_surface::Action::Destroy(id) => {
@@ -474,6 +476,8 @@ where
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.anchor = anchor;
                                 layer_surface.surface.set_anchor(anchor);
+                                to_commit.insert(id, layer_surface.surface.wl_surface().clone());
+
                             }
                         }
                         platform_specific::wayland::layer_surface::Action::ExclusiveZone {
@@ -483,6 +487,7 @@ where
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.exclusive_zone = exclusive_zone;
                                 layer_surface.surface.set_exclusive_zone(exclusive_zone);
+                                to_commit.insert(id, layer_surface.surface.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::layer_surface::Action::Margin {
@@ -492,18 +497,23 @@ where
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.margin = margin;
                                 layer_surface.surface.set_margin(margin.top, margin.right, margin.bottom, margin.left);
+                                to_commit.insert(id, layer_surface.surface.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::layer_surface::Action::KeyboardInteractivity { id, keyboard_interactivity } => {
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.keyboard_interactivity = keyboard_interactivity;
                                 layer_surface.surface.set_keyboard_interactivity(keyboard_interactivity);
+                                to_commit.insert(id, layer_surface.surface.wl_surface().clone());
+
                             }
                         },
                         platform_specific::wayland::layer_surface::Action::Layer { id, layer } => {
                             if let Some(layer_surface) = self.state.layer_surfaces.iter_mut().find(|l| l.id == id) {
                                 layer_surface.layer = layer;
                                 layer_surface.surface.set_layer(layer);
+                                to_commit.insert(id, layer_surface.surface.wl_surface().clone());
+
                             }
                         },
                     },
@@ -526,52 +536,71 @@ where
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 window.requested_size = Some((width, height));
                                 window.window.xdg_surface().set_window_geometry(0, 0, width as i32, height as i32);
+                                to_commit.insert(id, window.window.wl_surface().clone());
+                                // TODO Ashley maybe don't force window size?
+                                if let Some(mut prev_configure) = window.last_configure.clone() {
+                                    prev_configure.new_size = Some((width, height));
+                                    sticky_exit_callback(
+                                        IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Configure(prev_configure, window.window.wl_surface().clone(), false), id: window.window.wl_surface().id()}),
+                                        &self.state,
+                                        &mut control_flow,
+                                        &mut callback,
+                                    );
+                                }
                             }
                         },
                         platform_specific::wayland::window::Action::MinSize { id, size } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
-                                window.window.set_min_size(size)
+                                window.window.set_min_size(size);
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::MaxSize { id, size } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
-                                window.window.set_max_size(size)
+                                window.window.set_max_size(size);
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::Title { id, title } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
-                                window.window.set_title(title)
+                                window.window.set_title(title);
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::Minimize { id } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 window.window.set_mimimized();
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::Maximize { id } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 window.window.set_maximized();
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::UnsetMaximize { id } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 window.window.unset_maximized();
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::Fullscreen { id } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 // TODO ASHLEY: allow specific output to be requested for fullscreen?
                                 window.window.set_fullscreen(None);
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::UnsetFullscreen { id } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 window.window.unset_fullscreen();
+                                to_commit.insert(id, window.window.wl_surface().clone());
                             }
                         },
                         platform_specific::wayland::window::Action::InteractiveMove { id } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
-                                todo!()
+                                todo!();
                             }
                         },
                         platform_specific::wayland::window::Action::InteractiveResize { id, edge } => todo!(),
@@ -649,6 +678,11 @@ where
                 }
             }
 
+            // commit changes made via actions
+            for s in to_commit {
+                s.1.commit();
+            }
+
             // Send events cleared.
             sticky_exit_callback(
                 IcedSctkEvent::MainEventsCleared,
@@ -714,21 +748,6 @@ where
                     &mut control_flow,
                     &mut callback,
                 );
-                if let Some(wl_suface) = self
-                    .state
-                    .windows
-                    .iter()
-                    .map(|w| w.window.wl_surface())
-                    .chain(
-                        self.state
-                            .layer_surfaces
-                            .iter()
-                            .map(|l| l.surface.wl_surface()),
-                    )
-                    .find(|s| s.id() == id)
-                {
-                    wl_suface.commit()
-                }
             }
 
             // Send RedrawEventCleared.

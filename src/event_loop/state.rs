@@ -384,6 +384,7 @@ where
         } else {
             builder
         };
+
         // builder = if let Some(parent) = parent.and_then(|p| self.windows.iter().find(|w| w.window.wl_surface().id() == p)) {
         //     builder.parent(&parent.window)
         // } else {
@@ -402,6 +403,9 @@ where
                 wl_surface.clone(),
             )
             .expect("failed to create window");
+
+        window.xdg_surface().set_window_geometry(0, 0, size.0 as i32, size.1 as i32);
+        window.wl_surface().commit();
         self.windows.push(SctkWindow {
             id: window_id,
             window,
