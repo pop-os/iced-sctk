@@ -234,7 +234,7 @@ where
         &mut self,
         settings: SctkPopupSettings,
     ) -> Result<(window::Id, ObjectId, ObjectId, WlSurface), PopupCreationError> {
-        let mut positioner = XdgPositioner::new(&self.xdg_shell_state)
+        let positioner = XdgPositioner::new(&self.xdg_shell_state)
             .map_err(|e| PopupCreationError::PositionerCreationFailed(e))?;
         positioner.set_anchor(settings.positioner.anchor);
         positioner.set_anchor_rect(
@@ -404,7 +404,9 @@ where
             )
             .expect("failed to create window");
 
-        window.xdg_surface().set_window_geometry(0, 0, size.0 as i32, size.1 as i32);
+        window
+            .xdg_surface()
+            .set_window_geometry(0, 0, size.0 as i32, size.1 as i32);
         window.wl_surface().commit();
         self.windows.push(SctkWindow {
             id: window_id,

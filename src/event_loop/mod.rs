@@ -346,7 +346,6 @@ where
                         {
                             Some(p) => {
                                 let _p = self.state.popups.remove(p);
-                                _p.popup.xdg_popup().destroy();
                                 sticky_exit_callback(
                                     IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent {
                                         variant: PopupEventVariant::Done,
@@ -535,7 +534,7 @@ where
                         platform_specific::wayland::window::Action::Size { id, width, height } => {
                             if let Some(window) = self.state.windows.iter_mut().find(|w| w.id == id) {
                                 window.requested_size = Some((width, height));
-                                window.window.xdg_surface().set_window_geometry(0, 0, width as i32, height as i32);
+                                window.window.xdg_surface().set_window_geometry(0, 0, width.max(1) as i32, height.max(1) as i32);
                                 to_commit.insert(id, window.window.wl_surface().clone());
                                 // TODO Ashley maybe don't force window size?
                                 if let Some(mut prev_configure) = window.last_configure.clone() {
@@ -663,13 +662,16 @@ where
                                 }
                             }
                             for popup in to_destroy.into_iter().rev() {
-                                popup.popup.xdg_popup().destroy();
-                                self.state.sctk_events.push(SctkEvent::PopupEvent {
+                                sticky_exit_callback(IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent {
                                     variant: PopupEventVariant::Done,
                                     toplevel_id: popup.toplevel.id(),
                                     parent_id: popup.parent.wl_surface().id(),
                                     id: popup.popup.wl_surface().id(),
-                                });
+                                }),
+                                    &self.state,
+                                    &mut control_flow,
+                                    &mut callback,
+                                );
                             }
                         },
                         platform_specific::wayland::popup::Action::Reposition { id, positioner } => todo!(),

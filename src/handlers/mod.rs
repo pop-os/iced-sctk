@@ -8,9 +8,6 @@ pub mod shell;
 use sctk::{
     delegate_registry, delegate_shm,
     output::OutputState,
-    reexports::client::{
-        globals::GlobalListContents, protocol::wl_registry, Connection, Dispatch, QueueHandle,
-    },
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::SeatState,
@@ -19,12 +16,6 @@ use sctk::{
 use std::fmt::Debug;
 
 use crate::event_loop::state::SctkState;
-
-// Most of these handlers have not been properly filled out.
-//
-// The idea is for each of these to track what needs to be tracked in the SctkState,
-// then send a message for each event to the Sender for the Iced Application to handle
-//
 
 impl<T: Debug> ShmHandler for SctkState<T> {
     fn shm_state(&mut self) -> &mut ShmState {
