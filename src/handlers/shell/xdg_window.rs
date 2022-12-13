@@ -26,7 +26,7 @@ impl<T: Debug> WindowHandler for SctkState<T> {
 
         self.sctk_events.push(SctkEvent::WindowEvent {
             variant: WindowEventVariant::Close,
-            id: window.window.wl_surface().id(),
+            id: window.window.wl_surface().clone(),
         })
         // TODO popup cleanup
     }
@@ -53,7 +53,7 @@ impl<T: Debug> WindowHandler for SctkState<T> {
         };
 
         let wl_surface = window.window.wl_surface();
-        let id = wl_surface.id();
+        let id = wl_surface.clone();
         let first = window.last_configure.is_none();
         window.last_configure.replace(configure.clone());
 

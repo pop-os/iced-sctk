@@ -342,7 +342,7 @@ where
                             .state
                             .popups
                             .iter()
-                            .position(|s| s.popup.wl_surface().id() == id)
+                            .position(|s| s.popup.wl_surface().id() == id.id())
                         {
                             Some(p) => {
                                 let _p = self.state.popups.remove(p);
@@ -369,7 +369,7 @@ where
                             .state
                             .layer_surfaces
                             .iter()
-                            .position(|l| l.surface.wl_surface().id() == id)
+                            .position(|l| l.surface.wl_surface().id() == id.id())
                         {
                             let _l = self.state.layer_surfaces.remove(i);
                             sticky_exit_callback(
@@ -391,7 +391,7 @@ where
                             .state
                             .layer_surfaces
                             .iter()
-                            .position(|l| l.surface.wl_surface().id() == id)
+                            .position(|l| l.surface.wl_surface().id() == id.id())
                         {
                             let w = self.state.windows.remove(i);
                             w.window.xdg_toplevel().destroy();
@@ -438,7 +438,7 @@ where
                                 sticky_exit_callback(
                                     IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
                                         variant: LayerSurfaceEventVariant::Created(object_id.clone(), id),
-                                        id: object_id,
+                                        id: wl_surface.clone(),
                                     }),
                                     &self.state,
                                     &mut control_flow,
@@ -463,7 +463,7 @@ where
                                 sticky_exit_callback(
                                     IcedSctkEvent::SctkEvent(SctkEvent::LayerSurfaceEvent {
                                         variant: LayerSurfaceEventVariant::Done,
-                                        id: l.surface.wl_surface().id(),
+                                        id: l.surface.wl_surface().clone(),
                                     }),
                                     &self.state,
                                     &mut control_flow,
@@ -525,7 +525,7 @@ where
                             let (id, wl_surface) = self.state.get_window(builder);
                             let object_id = wl_surface.id();
                             sticky_exit_callback(
-                                IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Created(object_id.clone(), id), id: object_id }),
+                                IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Created(object_id.clone(), id), id: wl_surface.clone() }),
                                 &self.state,
                                 &mut control_flow,
                                 &mut callback,
@@ -540,7 +540,7 @@ where
                                 if let Some(mut prev_configure) = window.last_configure.clone() {
                                     prev_configure.new_size = Some((width, height));
                                     sticky_exit_callback(
-                                        IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Configure(prev_configure, window.window.wl_surface().clone(), false), id: window.window.wl_surface().id()}),
+                                        IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent { variant: WindowEventVariant::Configure(prev_configure, window.window.wl_surface().clone(), false), id: window.window.wl_surface().clone()}),
                                         &self.state,
                                         &mut control_flow,
                                         &mut callback,
@@ -611,7 +611,7 @@ where
                                 sticky_exit_callback(
                                     IcedSctkEvent::SctkEvent(SctkEvent::WindowEvent {
                                         variant: WindowEventVariant::Close,
-                                        id: window.window.wl_surface().id(),
+                                        id: window.window.wl_surface().clone(),
                                     }),
                                     &self.state,
                                     &mut control_flow,
@@ -625,7 +625,7 @@ where
                             if let Ok((id, parent_id, toplevel_id, wl_surface)) = self.state.get_popup(popup) {
                                 let object_id = wl_surface.id();
                                 sticky_exit_callback(
-                                    IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Created(object_id.clone(), id), toplevel_id, parent_id, id: object_id }),
+                                    IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Created(object_id.clone(), id), toplevel_id, parent_id, id: wl_surface.clone() }),
                                     &self.state,
                                     &mut control_flow,
                                     &mut callback,
@@ -664,9 +664,9 @@ where
                             for popup in to_destroy.into_iter().rev() {
                                 sticky_exit_callback(IcedSctkEvent::SctkEvent(SctkEvent::PopupEvent {
                                     variant: PopupEventVariant::Done,
-                                    toplevel_id: popup.toplevel.id(),
-                                    parent_id: popup.parent.wl_surface().id(),
-                                    id: popup.popup.wl_surface().id(),
+                                    toplevel_id: popup.toplevel.clone(),
+                                    parent_id: popup.parent.wl_surface().clone(),
+                                    id: popup.popup.wl_surface().clone(),
                                 }),
                                     &self.state,
                                     &mut control_flow,
@@ -707,7 +707,7 @@ where
 
             // Handle RedrawRequested requests.
             for (surface_id, mut surface_request) in surface_user_requests.iter() {
-                if let Some(i) = must_redraw.iter().position(|a_id| a_id == surface_id) {
+                if let Some(i) = must_redraw.iter().position(|a_id| &a_id.id() == surface_id) {
                     must_redraw.remove(i);
                 }
                 let wl_suface = self
@@ -745,7 +745,7 @@ where
 
             for id in must_redraw {
                 sticky_exit_callback(
-                    IcedSctkEvent::RedrawRequested(id.clone()),
+                    IcedSctkEvent::RedrawRequested(id.id()),
                     &self.state,
                     &mut control_flow,
                     &mut callback,

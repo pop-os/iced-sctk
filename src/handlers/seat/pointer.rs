@@ -30,8 +30,8 @@ impl<T: Debug> PointerHandler for SctkState<T> {
             if is_active {
                 self.sctk_events.push(SctkEvent::PointerEvent {
                     variant: e.clone(),
-                    ptr_id: pointer.id(),
-                    seat_id: my_seat.seat.id(),
+                    ptr_id: pointer.clone(),
+                    seat_id: my_seat.seat.clone(),
                 });
             }
             match e.kind {

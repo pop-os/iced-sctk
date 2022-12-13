@@ -233,7 +233,7 @@ where
     pub fn get_popup(
         &mut self,
         settings: SctkPopupSettings,
-    ) -> Result<(window::Id, ObjectId, ObjectId, WlSurface), PopupCreationError> {
+    ) -> Result<(window::Id, WlSurface, WlSurface, WlSurface), PopupCreationError> {
         let positioner = XdgPositioner::new(&self.xdg_shell_state)
             .map_err(|e| PopupCreationError::PositionerCreationFailed(e))?;
         positioner.set_anchor(settings.positioner.anchor);
@@ -278,8 +278,8 @@ where
             });
             Ok((
                 settings.id,
-                parent.surface.wl_surface().id(),
-                parent.surface.wl_surface().id(),
+                parent.surface.wl_surface().clone(),
+                parent.surface.wl_surface().clone(),
                 popup.wl_surface().clone(),
             ))
         } else if let Some(parent) = self.windows.iter().find(|w| w.id == settings.parent) {
@@ -302,8 +302,8 @@ where
             });
             Ok((
                 settings.id,
-                parent.window.wl_surface().id(),
-                parent.window.wl_surface().id(),
+                parent.window.wl_surface().clone(),
+                parent.window.wl_surface().clone(),
                 popup.wl_surface().clone(),
             ))
         } else if let Some(i) = self.popups.iter().position(|p| p.id == settings.parent) {
@@ -333,8 +333,8 @@ where
             });
             Ok((
                 settings.id,
-                parent.id(),
-                toplevel.id(),
+                parent,
+                toplevel,
                 popup.wl_surface().clone(),
             ))
         } else {

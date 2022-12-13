@@ -17,7 +17,7 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         let sctk_popup = match self
             .popups
             .iter_mut()
-            .find(|s| s.popup.wl_surface().id() == popup.wl_surface().id())
+            .find(|s| s.popup.wl_surface().clone() == popup.wl_surface().clone())
         {
             Some(p) => p,
             None => return,
@@ -27,12 +27,12 @@ impl<T: Debug> PopupHandler for SctkState<T> {
 
         self.sctk_events.push(SctkEvent::PopupEvent {
             variant: PopupEventVariant::Configure(configure, popup.wl_surface().clone(), first),
-            id: popup.wl_surface().id(),
-            toplevel_id: sctk_popup.toplevel.id(),
+            id: popup.wl_surface().clone(),
+            toplevel_id: sctk_popup.toplevel.clone(),
             parent_id: match &sctk_popup.parent {
-                SctkSurface::LayerSurface(s) => s.id(),
-                SctkSurface::Window(s) => s.id(),
-                SctkSurface::Popup(s) => s.id(),
+                SctkSurface::LayerSurface(s) => s.clone(),
+                SctkSurface::Window(s) => s.clone(),
+                SctkSurface::Popup(s) => s.clone(),
             },
         })
     }
@@ -46,7 +46,7 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         let sctk_popup = match self
             .popups
             .iter()
-            .position(|s| s.popup.wl_surface().id() == popup.wl_surface().id())
+            .position(|s| s.popup.wl_surface().clone() == popup.wl_surface().clone())
         {
             Some(p) => self.popups.remove(p),
             None => return,
@@ -71,9 +71,9 @@ impl<T: Debug> PopupHandler for SctkState<T> {
         for popup in to_destroy.into_iter().rev() {
             self.sctk_events.push(SctkEvent::PopupEvent {
                 variant: PopupEventVariant::Done,
-                toplevel_id: popup.toplevel.id(),
-                parent_id: popup.parent.wl_surface().id(),
-                id: popup.popup.wl_surface().id(),
+                toplevel_id: popup.toplevel.clone(),
+                parent_id: popup.parent.wl_surface().clone(),
+                id: popup.popup.wl_surface().clone(),
             });
             self.popups.push(popup);
         }

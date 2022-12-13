@@ -392,7 +392,7 @@ where
                             kbd_surface_id.take();
                         }
                         KeyboardEventVariant::Enter(object_id) => {
-                            kbd_surface_id.replace(object_id);
+                            kbd_surface_id.replace(object_id.id());
                         }
                         KeyboardEventVariant::Press(_)
                         | KeyboardEventVariant::Release(_)
@@ -412,12 +412,12 @@ where
                             surface_ids.insert(id, SurfaceIdWrapper::Window(native_id));
                         }
                         crate::sctk_event::WindowEventVariant::Close => {
-                            if let Some(surface_id) = surface_ids.remove(&id) {
+                            if let Some(surface_id) = surface_ids.remove(&id.id()) {
                                 drop(egl_surfaces.remove(&surface_id.inner()));
                                 interfaces.remove(&surface_id.inner());
                                 states.remove(&surface_id.inner());
                                 messages.push(application.close_requested(surface_id));
-                                destroyed_surface_ids.insert(id, surface_id);
+                                destroyed_surface_ids.insert(id.id(), surface_id);
                                 if exit_on_close_request && surface_id == init_id {
                                     break 'main;
                                 }
@@ -430,7 +430,7 @@ where
                             wl_surface,
                             first,
                         ) => {
-                            if let Some(id) = surface_ids.get(&id) {
+                            if let Some(id) = surface_ids.get(&id.id()) {
                                 let new_size = configure.new_size.unwrap();
 
                                 if first && !egl_surfaces.contains_key(&id.inner()) {
@@ -466,19 +466,19 @@ where
                             surface_ids.insert(id, SurfaceIdWrapper::LayerSurface(native_id));
                         }
                         LayerSurfaceEventVariant::Done => {
-                            if let Some(surface_id) = surface_ids.remove(&id) {
+                            if let Some(surface_id) = surface_ids.remove(&id.id()) {
                                 drop(egl_surfaces.remove(&surface_id.inner()));
                                 interfaces.remove(&surface_id.inner());
                                 states.remove(&surface_id.inner());
                                 messages.push(application.close_requested(surface_id));
-                                destroyed_surface_ids.insert(id, surface_id);
+                                destroyed_surface_ids.insert(id.id(), surface_id);
                                 if exit_on_close_request && surface_id == init_id {
                                     break 'main;
                                 }
                             }
                         }
                         LayerSurfaceEventVariant::Configure(configure, wl_surface, first) => {
-                            if let Some(id) = surface_ids.get(&id) {
+                            if let Some(id) = surface_ids.get(&id.id()) {
                                 if first && !egl_surfaces.contains_key(&id.inner()) {
                                     let egl_surface = get_surface(
                                         &egl_display,
@@ -517,20 +517,20 @@ where
                         id,
                     } => match variant {
                         PopupEventVariant::Created(_, native_id) => {
-                            surface_ids.insert(id, SurfaceIdWrapper::Popup(native_id));
+                            surface_ids.insert(id.id(), SurfaceIdWrapper::Popup(native_id));
                         }
                         PopupEventVariant::Done => {
-                            if let Some(surface_id) = surface_ids.remove(&id) {
+                            if let Some(surface_id) = surface_ids.remove(&id.id()) {
                                 drop(egl_surfaces.remove(&surface_id.inner()));
                                 interfaces.remove(&surface_id.inner());
                                 states.remove(&surface_id.inner());
                                 messages.push(application.close_requested(surface_id));
-                                destroyed_surface_ids.insert(id, surface_id);
+                                destroyed_surface_ids.insert(id.id(), surface_id);
                             }
                         }
                         PopupEventVariant::WmCapabilities(_) => {}
                         PopupEventVariant::Configure(configure, wl_surface, first) => {
-                            if let Some(id) = surface_ids.get(&id) {
+                            if let Some(id) = surface_ids.get(&id.id()) {
                                 if first && !egl_surfaces.contains_key(&id.inner()) {
                                     let egl_surface = get_surface(
                                         &egl_display,
@@ -580,7 +580,7 @@ where
                         inner_size: _,
                     } => {
                         if let Some(state) = surface_ids
-                            .get(&id)
+                            .get(&id.id())
                             .and_then(|id| states.get_mut(&id.inner()))
                         {
                             state.set_scale_factor(factor);
@@ -625,22 +625,22 @@ where
                     for (object_id, surface_id) in &surface_ids {
                         // returns (remove, copy)
                         let filter_events = |e: &SctkEvent| match e {
-                            SctkEvent::SeatEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::SeatEvent { id, .. } => (&id.id() == object_id, false),
                             SctkEvent::PointerEvent { variant, .. } => {
                                 (&variant.surface.id() == object_id, false)
                             }
                             SctkEvent::KeyboardEvent { variant, .. } => match variant {
-                                KeyboardEventVariant::Leave(id) => (id == object_id, false),
+                                KeyboardEventVariant::Leave(id) => (&id.id() == object_id, false),
                                 _ => (kbd_surface_id.as_ref() == Some(&object_id), false),
                             },
-                            SctkEvent::WindowEvent { id, .. } => (id == object_id, false),
-                            SctkEvent::LayerSurfaceEvent { id, .. } => (id == object_id, false),
-                            SctkEvent::PopupEvent { id, .. } => (id == object_id, false),
+                            SctkEvent::WindowEvent { id, .. } => (&id.id() == object_id, false),
+                            SctkEvent::LayerSurfaceEvent { id, .. } => (&id.id() == object_id, false),
+                            SctkEvent::PopupEvent { id, .. } => (&id.id() == object_id, false),
                             SctkEvent::NewOutput { .. }
                             | SctkEvent::UpdateOutput { .. }
                             | SctkEvent::RemovedOutput(_) => (false, true),
                             SctkEvent::Draw(_) => unimplemented!(),
-                            SctkEvent::ScaleFactorChanged { id, .. } => (id == object_id, false),
+                            SctkEvent::ScaleFactorChanged { id, .. } => (&id.id() == object_id, false),
                         };
                         let mut filtered = Vec::with_capacity(events.len());
                         let mut i = 0;

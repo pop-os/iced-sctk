@@ -28,7 +28,7 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
 
         self.sctk_events.push(SctkEvent::LayerSurfaceEvent {
             variant: LayerSurfaceEventVariant::Done,
-            id: layer.surface.wl_surface().id(),
+            id: layer.surface.wl_surface().clone(),
         })
         // TODO popup cleanup
     }
@@ -72,9 +72,9 @@ impl<T: Debug> LayerShellHandler for SctkState<T> {
                 layer.surface.wl_surface().clone(),
                 first,
             ),
-            id: id.clone(),
+            id: layer.surface.wl_surface().clone(),
         });
-        self.sctk_events.push(SctkEvent::Draw(id));
+        self.sctk_events.push(SctkEvent::Draw(layer.surface.wl_surface().clone()));
     }
 }
 

@@ -17,24 +17,35 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         _raw: &[u32],
         _keysyms: &[u32],
     ) {
-        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
-            if s.kbd.as_ref() == Some(keyboard) {
-                Some((i, s))
-            } else {
-                None
-            }
-        }) {
-            Some((i, s)) => (i == 0, s),
-            None => return,
+        let (i, mut is_active, seat) = {
+            let (i, is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+                if s.kbd.as_ref() == Some(keyboard) {
+                    Some((i, s))
+                } else {
+                    None
+                }
+            }) {
+                Some((i, s)) => (i, i == 0, s),
+                None => return,
+            };
+            my_seat.kbd_focus.replace(surface.clone());
+
+            let seat = my_seat.seat.clone();
+            (i, is_active, seat)
         };
 
-        my_seat.kbd_focus.replace(surface.clone());
+        // TODO Ashley: thoroughly test this
+        // swap the active seat to be the current seat if the current "active" seat is not focused on the application anyway
+        if !is_active && self.seats[0].kbd_focus.is_none() {
+            is_active = true;
+            self.seats.swap(0, i);
+        }
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {
-                variant: KeyboardEventVariant::Enter(surface.id()),
-                kbd_id: keyboard.id(),
-                seat_id: my_seat.seat.id(),
+                variant: KeyboardEventVariant::Enter(surface.clone()),
+                kbd_id: keyboard.clone(),
+                seat_id: seat.clone(),
             })
         }
     }
@@ -47,26 +58,39 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
         surface: &sctk::reexports::client::protocol::wl_surface::WlSurface,
         _serial: u32,
     ) {
-        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
-            if s.kbd.as_ref() == Some(keyboard) {
-                Some((i, s))
-            } else {
-                None
-            }
-        }) {
-            Some((i, s)) => (i == 0, s),
-            None => return,
+        let (is_active, seat, kbd) = {
+            let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+                if s.kbd.as_ref() == Some(keyboard) {
+                    Some((i, s))
+                } else {
+                    None
+                }
+            }) {
+                Some((i, s)) => (i == 0, s),
+                None => return,
+            };
+            let seat = my_seat.seat.clone();
+            let kbd = keyboard.clone();
+            my_seat.kbd_focus.take();
+            (is_active, seat, kbd)
         };
-        let seat_id = my_seat.seat.id();
-        let kbd_id = keyboard.id();
-        my_seat.kbd_focus.take();
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {
-                variant: KeyboardEventVariant::Leave(surface.id()),
-                kbd_id,
-                seat_id,
-            })
+                variant: KeyboardEventVariant::Leave(surface.clone()),
+                kbd_id: kbd,
+                seat_id: seat,
+            });
+            // if there is another seat with a keyboard focused on a surface make that the new active seat
+            if let Some(i) = self.seats.iter().position(|s| s.kbd_focus.is_some()) {
+                self.seats.swap(0, i);
+                let s = &self.seats[0];
+                self.sctk_events.push(SctkEvent::KeyboardEvent {
+                    variant: KeyboardEventVariant::Enter(s.kbd_focus.clone().unwrap()),
+                    kbd_id: s.kbd.clone().unwrap(),
+                    seat_id: s.seat.clone(),
+                })
+            }
         }
     }
 
@@ -88,8 +112,8 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
             Some((i, s)) => (i == 0, s),
             None => return,
         };
-        let seat_id = my_seat.seat.id();
-        let kbd_id = keyboard.id();
+        let seat_id = my_seat.seat.clone();
+        let kbd_id = keyboard.clone();
         my_seat.last_kbd_press.replace(event.clone());
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {
@@ -118,8 +142,8 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
             Some((i, s)) => (i == 0, s),
             None => return,
         };
-        let seat_id = my_seat.seat.id();
-        let kbd_id = keyboard.id();
+        let seat_id = my_seat.seat.clone();
+        let kbd_id = keyboard.clone();
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {
@@ -148,8 +172,8 @@ impl<T: Debug> KeyboardHandler for SctkState<T> {
             Some((i, s)) => (i == 0, s),
             None => return,
         };
-        let seat_id = my_seat.seat.id();
-        let kbd_id = keyboard.id();
+        let seat_id = my_seat.seat.clone();
+        let kbd_id = keyboard.clone();
 
         if is_active {
             self.sctk_events.push(SctkEvent::KeyboardEvent {

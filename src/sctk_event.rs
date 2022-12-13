@@ -19,7 +19,7 @@ use iced_native::{
 };
 use sctk::{
     output::OutputInfo,
-    reexports::client::{backend::ObjectId, protocol::wl_surface::WlSurface},
+    reexports::client::{backend::ObjectId, protocol::{wl_surface::WlSurface, wl_seat::{self, WlSeat}, wl_pointer::WlPointer, wl_keyboard::WlKeyboard, wl_output::WlOutput}, Proxy},
     seat::{
         keyboard::{KeyEvent, Modifiers},
         pointer::{PointerEvent, PointerEventKind},
@@ -98,17 +98,17 @@ pub enum SctkEvent {
     //
     SeatEvent {
         variant: SeatEventVariant,
-        id: ObjectId,
+        id: WlSeat,
     },
     PointerEvent {
         variant: PointerEvent,
-        ptr_id: ObjectId,
-        seat_id: ObjectId,
+        ptr_id: WlPointer,
+        seat_id: WlSeat,
     },
     KeyboardEvent {
         variant: KeyboardEventVariant,
-        kbd_id: ObjectId,
-        seat_id: ObjectId,
+        kbd_id: WlKeyboard,
+        seat_id: WlSeat,
     },
     // TODO data device & touch
 
@@ -117,31 +117,31 @@ pub enum SctkEvent {
     //
     WindowEvent {
         variant: WindowEventVariant,
-        id: ObjectId,
+        id: WlSurface,
     },
     LayerSurfaceEvent {
         variant: LayerSurfaceEventVariant,
-        id: ObjectId,
+        id: WlSurface,
     },
     PopupEvent {
         variant: PopupEventVariant,
         /// this may be the Id of a window or layer surface
-        toplevel_id: ObjectId,
+        toplevel_id: WlSurface,
         /// this may be any SurfaceId
-        parent_id: ObjectId,
+        parent_id: WlSurface,
         /// the id of this popup
-        id: ObjectId,
+        id: WlSurface,
     },
 
     //
     // output events
     //
     NewOutput {
-        id: ObjectId,
+        id: WlOutput,
         info: Option<OutputInfo>,
     },
     UpdateOutput {
-        id: ObjectId,
+        id: WlOutput,
         info: OutputInfo,
     },
     RemovedOutput(ObjectId),
@@ -149,10 +149,10 @@ pub enum SctkEvent {
     //
     // compositor events
     //
-    Draw(ObjectId),
+    Draw(WlSurface),
     ScaleFactorChanged {
         factor: f64,
-        id: ObjectId,
+        id: WlOutput,
         inner_size: PhysicalSize<u32>,
     },
 }
@@ -167,8 +167,8 @@ pub enum SeatEventVariant {
 
 #[derive(Debug, Clone)]
 pub enum KeyboardEventVariant {
-    Leave(ObjectId),
-    Enter(ObjectId),
+    Leave(WlSurface),
+    Enter(WlSurface),
     Press(KeyEvent),
     Repeat(KeyEvent),
     Release(KeyEvent),
@@ -325,12 +325,12 @@ impl SctkEvent {
                 kbd_id: _,
                 seat_id: _,
             } => match variant {
-                KeyboardEventVariant::Leave(id) => surface_ids
-                    .get(&id)
+                KeyboardEventVariant::Leave(surface) => surface_ids
+                    .get(&surface.id())
                     .map(|id| match id {
                         SurfaceIdWrapper::LayerSurface(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Layer(LayerEvent::Unfocused(id.inner())),
+                                wayland::Event::Layer(LayerEvent::Unfocused, surface, id.inner()),
                             ))
                         }
                         SurfaceIdWrapper::Window(id) => {
@@ -338,18 +338,18 @@ impl SctkEvent {
                         }
                         SurfaceIdWrapper::Popup(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Popup(PopupEvent::Unfocused(id.inner())),
+                                wayland::Event::Popup(PopupEvent::Unfocused, surface, id.inner()),
                             ))
                         }
                     })
                     .into_iter()
                     .collect(),
-                KeyboardEventVariant::Enter(id) => surface_ids
-                    .get(&id)
+                KeyboardEventVariant::Enter(surface) => surface_ids
+                    .get(&surface.id())
                     .map(|id| match id {
                         SurfaceIdWrapper::LayerSurface(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Layer(LayerEvent::Focused(id.inner())),
+                                wayland::Event::Layer(LayerEvent::Focused, surface, id.inner()),
                             ))
                         }
                         SurfaceIdWrapper::Window(id) => {
@@ -357,7 +357,7 @@ impl SctkEvent {
                         }
                         SurfaceIdWrapper::Popup(_id) => {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Popup(PopupEvent::Focused(id.inner())),
+                                wayland::Event::Popup(PopupEvent::Focused, surface, id.inner()),
                             ))
                         }
                     })
@@ -439,21 +439,21 @@ impl SctkEvent {
                     )]
                 }
             },
-            SctkEvent::WindowEvent { variant, id } => match variant {
+            SctkEvent::WindowEvent { variant, id: surface } => match variant {
                 // TODO Ashley: platform specific events for window
                 WindowEventVariant::Created(..) => Default::default(),
                 WindowEventVariant::Close => destroyed_surface_ids
-                    .get(&id)
+                    .get(&surface.id())
                     .map(|id| iced_native::Event::Window(id.inner(), window::Event::CloseRequested))
                     .into_iter()
                     .collect(),
                 WindowEventVariant::WmCapabilities(_) => Default::default(),
                 WindowEventVariant::ConfigureBounds { .. } => Default::default(),
-                WindowEventVariant::Configure(configure, _, _) => {
+                WindowEventVariant::Configure(configure, surface, _) => {
                     if configure.is_resizing() {
                         let new_size = configure.new_size.unwrap();
                         surface_ids
-                            .get(&id)
+                            .get(&surface.id())
                             .map(|id| {
                                 iced_native::Event::Window(
                                     id.inner(),
@@ -470,25 +470,25 @@ impl SctkEvent {
                     }
                 }
             },
-            SctkEvent::LayerSurfaceEvent { variant, id } => match variant {
+            SctkEvent::LayerSurfaceEvent { variant, id: surface } => match variant {
                 LayerSurfaceEventVariant::Done => destroyed_surface_ids
-                    .get(&id)
+                    .get(&surface.id())
                     .map(|id| {
                         iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                            wayland::Event::Layer(LayerEvent::Done(id.inner())),
+                            wayland::Event::Layer(LayerEvent::Done, surface, id.inner()),
                         ))
                     })
                     .into_iter()
                     .collect(),
                 _ => Default::default(),
             },
-            SctkEvent::PopupEvent { variant, id, .. } => {
+            SctkEvent::PopupEvent { variant, id:surface, .. } => {
                 match variant {
                     PopupEventVariant::Done => destroyed_surface_ids
-                        .get(&id)
+                        .get(&surface.id())
                         .map(|id| {
                             iced_native::Event::PlatformSpecific(PlatformSpecific::Wayland(
-                                wayland::Event::Popup(PopupEvent::Done(id.inner())),
+                                wayland::Event::Popup(PopupEvent::Done, surface, id.inner()),
                             ))
                         })
                         .into_iter()

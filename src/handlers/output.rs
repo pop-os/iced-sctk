@@ -14,7 +14,7 @@ impl<T: Debug> OutputHandler for SctkState<T> {
         output: sctk::reexports::client::protocol::wl_output::WlOutput,
     ) {
         self.sctk_events.push(SctkEvent::NewOutput {
-            id: output.id(),
+            id: output.clone(),
             info: self.output_state.info(&output),
         });
         self.outputs.push(output);
@@ -28,7 +28,7 @@ impl<T: Debug> OutputHandler for SctkState<T> {
     ) {
         if let Some(info) = self.output_state.info(&output) {
             self.sctk_events.push(SctkEvent::UpdateOutput {
-                id: output.id(),
+                id: output.clone(),
                 info,
             });
         }

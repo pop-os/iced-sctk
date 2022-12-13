@@ -22,7 +22,7 @@ where
     ) {
         self.sctk_events.push(SctkEvent::SeatEvent {
             variant: SeatEventVariant::New,
-            id: seat.id(),
+            id: seat.clone(),
         });
         self.seats.push(SctkSeat {
             seat,
@@ -70,16 +70,15 @@ where
                 {
                     self.sctk_events.push(SctkEvent::SeatEvent {
                         variant: SeatEventVariant::NewCapability(capability, kbd.id()),
-                        id: seat.id(),
+                        id: seat.clone(),
                     });
-                    let kbd_id = kbd.id();
-                    let seat_id = seat.id();
+                    let kbd_clone = kbd.clone();
                     self.loop_handle
                         .insert_source(source, move |e, _, state| {
                             state.sctk_events.push(SctkEvent::KeyboardEvent {
                                 variant: KeyboardEventVariant::Repeat(e),
-                                kbd_id: kbd_id.clone(),
-                                seat_id: seat_id.clone(),
+                                kbd_id: kbd_clone.clone(),
+                                seat_id: seat.clone(),
                             });
                         })
                         .expect("Failed to insert the repeating keyboard into the event loop");
@@ -90,7 +89,7 @@ where
                 if let Ok(ptr) = self.seat_state.get_pointer(qh, &seat) {
                     self.sctk_events.push(SctkEvent::SeatEvent {
                         variant: SeatEventVariant::NewCapability(capability, ptr.id()),
-                        id: seat.id(),
+                        id: seat.clone(),
                     });
                     my_seat.ptr.replace(ptr);
                 }
@@ -121,7 +120,7 @@ where
                 if let Some(kbd) = my_seat.kbd.take() {
                     self.sctk_events.push(SctkEvent::SeatEvent {
                         variant: SeatEventVariant::RemoveCapability(capability, kbd.id()),
-                        id: seat.id(),
+                        id: seat.clone(),
                     });
                 }
             }
@@ -129,7 +128,7 @@ where
                 if let Some(ptr) = my_seat.ptr.take() {
                     self.sctk_events.push(SctkEvent::SeatEvent {
                         variant: SeatEventVariant::RemoveCapability(capability, ptr.id()),
-                        id: seat.id(),
+                        id: seat.clone(),
                     });
                 }
             }
@@ -149,7 +148,7 @@ where
     ) {
         self.sctk_events.push(SctkEvent::SeatEvent {
             variant: SeatEventVariant::Remove,
-            id: seat.id(),
+            id: seat.clone(),
         });
         if let Some(i) = self.seats.iter().position(|s| s.seat == seat) {
             self.seats.remove(i);
